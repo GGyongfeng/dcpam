@@ -20,4 +20,5 @@ dependencies = [
     "matplotlib>=3.3.0",
     "scipy>=1.6.0",
     "rich>=13.0.0",
+    "opencv-python>=4.13.0.90",
 ]
