@@ -6,3 +6,14 @@ DCPAM: Dual-Camera-Based Point-to-Axis Measurement Model with Laser Reference Li
 - DCPAM-CV : 基于传统 CV(计算机视觉)模型
 - DCPAM-MLP : 基于 MLP(多层感知机)模型
 - DCPAM-CNN : 基于CNN(conv Nature Network)模型
+
+## QUICK START
+
+1. 运行下面指令
+```bash
+git clone https://github.com/GGyongfeng/dcpam.git
+cd dcpam
+uv sync
+```
+
+2. 直接运行 & 学习 scripts 下的脚本
