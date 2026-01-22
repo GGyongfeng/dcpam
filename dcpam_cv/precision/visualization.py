@@ -64,10 +64,10 @@ def plot_3d_model(
     fig = plt.figure(figsize=(12, 9))
     ax = fig.add_subplot(111, projection="3d")
 
-    # 点坐标
-    p_t = np.array([x_t, y_t, z_t])
-    p_f = np.array([analyzer.X_F, y_f, z_f])
-    p_b = np.array([analyzer.X_B, y_b, z_b])
+    # 点坐标（转换为微米）
+    p_t = np.array([x_t, y_t, z_t]) * 10000  # cm to μm
+    p_f = np.array([analyzer.X_F, y_f, z_f]) * 10000
+    p_b = np.array([analyzer.X_B, y_b, z_b]) * 10000
 
     # 绘制点
     ax.scatter(*p_t, color="red", s=100, marker="o", label="P_t (目标点)", zorder=5)
@@ -105,7 +105,7 @@ def plot_3d_model(
     ax.scatter(*p_proj, color="orange", s=50, marker="x", zorder=5)
 
     # 绘制接收屏（简化为正方形）
-    screen_size = 2.0  # 2cm × 2cm
+    screen_size = 2.0 * 10000  # 2cm × 2cm 转换为 μm
 
     def draw_screen(x_pos, color, alpha=0.2):
         """绘制接收屏"""
@@ -115,20 +115,20 @@ def plot_3d_model(
         X = np.full_like(Y, x_pos)
         ax.plot_surface(X, Y, Z, color=color, alpha=alpha)
 
-    draw_screen(analyzer.X_F, "blue", alpha=0.15)
-    draw_screen(analyzer.X_B, "green", alpha=0.15)
+    draw_screen(analyzer.X_F * 10000, "blue", alpha=0.15)
+    draw_screen(analyzer.X_B * 10000, "green", alpha=0.15)
 
     # 设置坐标轴
-    ax.set_xlabel("X (cm)", fontsize=10)
-    ax.set_ylabel("Y (cm)", fontsize=10)
-    ax.set_zlabel("Z (cm)", fontsize=10)
+    ax.set_xlabel("X (μm)", fontsize=10)
+    ax.set_ylabel("Y (μm)", fontsize=10)
+    ax.set_zlabel("Z (μm)", fontsize=10)
     ax.set_title("3D 空间模型：点到直线距离", fontsize=12, fontweight="bold")
 
     # 设置坐标轴范围
     all_points = np.array([p_t, p_f, p_b])
-    x_range = [all_points[:, 0].min() - 5, all_points[:, 0].max() + 5]
-    y_range = [all_points[:, 1].min() - 2, all_points[:, 1].max() + 2]
-    z_range = [all_points[:, 2].min() - 100, all_points[:, 2].max() + 100]
+    x_range = [all_points[:, 0].min() - 50000, all_points[:, 0].max() + 50000]
+    y_range = [all_points[:, 1].min() - 20000, all_points[:, 1].max() + 20000]
+    z_range = [all_points[:, 2].min() - 1000000, all_points[:, 2].max() + 1000000]
 
     ax.set_xlim(x_range)
     ax.set_ylim(y_range)
@@ -160,14 +160,19 @@ def plot_distribution(
     """
     fig, ax = plt.subplots(figsize=(10, 6))
 
-    h_samples = mc_results["h_samples"]
-    h_mean = mc_results["h_mean"]
-    h_std = mc_results["h_std"]
-    h_95_ci = mc_results["h_95_ci"]
+    h_samples_cm = mc_results["h_samples"]
+    h_mean_cm = mc_results["h_mean"]
+    h_std = mc_results["h_std"] * 10000  # 转换为 μm
+    h_95_ci_cm = mc_results["h_95_ci"]
 
-    # 直方图
+    # 转换为相对于均值的偏差（μm）
+    h_samples_dev = (h_samples_cm - h_mean_cm) * 10000
+    h_mean_dev = 0.0  # 均值偏差为 0
+    h_95_ci_dev = (h_95_ci_cm - h_mean_cm) * 10000
+
+    # 直方图（显示相对偏差）
     n, bins, patches = ax.hist(
-        h_samples,
+        h_samples_dev,
         bins=50,
         density=True,
         alpha=0.7,
@@ -179,41 +184,40 @@ def plot_distribution(
     # 拟合正态分布
     from scipy import stats
 
-    x_fit = np.linspace(h_samples.min(), h_samples.max(), 200)
-    y_fit = stats.norm.pdf(x_fit, h_mean, h_std)
+    x_fit = np.linspace(h_samples_dev.min(), h_samples_dev.max(), 200)
+    y_fit = stats.norm.pdf(x_fit, h_mean_dev, h_std)
     ax.plot(x_fit, y_fit, "r-", linewidth=2, label="正态拟合")
 
     # 标记均值
     ax.axvline(
-        h_mean,
+        h_mean_dev,
         color="darkred",
         linestyle="--",
         linewidth=2,
-        label=f"均值 = {h_mean:.6f} cm",
+        label=f"均值",
     )
 
     # 标记 95% 置信区间
-    ax.axvline(h_95_ci[0], color="orange", linestyle=":", linewidth=1.5, label="95% CI")
-    ax.axvline(h_95_ci[1], color="orange", linestyle=":", linewidth=1.5)
+    ax.axvline(h_95_ci_dev[0], color="orange", linestyle=":", linewidth=1.5, label=f"95% CI: [{h_95_ci_dev[0]:.2f}, {h_95_ci_dev[1]:.2f}] μm")
+    ax.axvline(h_95_ci_dev[1], color="orange", linestyle=":", linewidth=1.5)
 
     # 填充 95% 区间
     ax.fill_betweenx(
-        [0, ax.get_ylim()[1]], h_95_ci[0], h_95_ci[1], color="orange", alpha=0.2
+        [0, ax.get_ylim()[1]], h_95_ci_dev[0], h_95_ci_dev[1], color="orange", alpha=0.2
     )
 
-    ax.set_xlabel("h (cm)", fontsize=11)
+    ax.set_xlabel("h 相对于均值的偏差 (μm)", fontsize=11)
     ax.set_ylabel("概率密度", fontsize=11)
     ax.set_title("h 值分布（蒙特卡洛模拟）", fontsize=12, fontweight="bold")
 
     # 添加统计信息文本框
     textstr = "\n".join(
         [
-            f"样本数: {len(h_samples)}",
-            f"均值: {h_mean:.6f} cm",
-            f"标准差 (MC): {h_std:.6e} cm",
-            f"标准差 (MC): {h_std * 10000:.4f} μm",
+            f"样本数: {len(h_samples_dev)}",
+            f"均值: {h_mean_cm * 10000:.2f} μm",
+            f"标准差 (MC): {h_std:.4f} μm",
             f"解析解 σ: {analytical_results['sigma_h'] * 10000:.4f} μm",
-            f"95% CI: [{h_95_ci[0]:.6f}, {h_95_ci[1]:.6f}] cm",
+            f"95% CI 偏差: [{h_95_ci_dev[0]:.2f}, {h_95_ci_dev[1]:.2f}] μm",
         ]
     )
     props = dict(boxstyle="round", facecolor="wheat", alpha=0.8)

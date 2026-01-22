@@ -35,25 +35,29 @@ def interactive_input():
 
     console.print("\n[yellow]请输入参数（直接回车使用默认值）:[/yellow]\n")
 
+    # 屏幕距离
+    console.print("[bold green]--- 前后屏幕距离 ---[/bold green]")
+    screen_distance = float(input("  前后屏幕距离 (cm) [默认 10.0]: ") or "10.0")
+
     # P_t 位置
-    console.print("[bold green]--- P_t (目标点) 位置 ---[/bold green]")
+    console.print("\n[bold green]--- P_t (目标点) 位置 ---[/bold green]")
     x_t = float(input("  x_t (cm) [默认 0.0]: ") or "0.0")
     y_t = float(input("  y_t (cm) [默认 0.0]: ") or "0.0")
     z_t = float(input("  z_t (cm) [范围: -100 到 -200, 默认 -150.0]: ") or "-150.0")
 
     # P_f 位置
-    console.print("\n[bold green]--- P_f (前接收屏, x=+5cm) 位置 ---[/bold green]")
-    y_f = float(input("  y_f (cm) [默认 0.0]: ") or "0.0")
-    z_f = float(input("  z_f (cm) [默认 0.0]: ") or "0.0")
+    console.print(f"\n[bold green]--- P_f (前接收屏, x=+{screen_distance/2:.1f}cm) 位置 ---[/bold green]")
+    y_f = float(input("  y_f (cm) [默认 0.5]: ") or "0.5")
+    z_f = float(input("  z_f (cm) [默认 0.5]: ") or "0.5")
 
     # P_b 位置
-    console.print("\n[bold green]--- P_b (后接收屏, x=-5cm) 位置 ---[/bold green]")
-    y_b = float(input("  y_b (cm) [默认 0.0]: ") or "0.0")
-    z_b = float(input("  z_b (cm) [默认 0.0]: ") or "0.0")
+    console.print(f"\n[bold green]--- P_b (后接收屏, x={-screen_distance/2:.1f}cm) 位置 ---[/bold green]")
+    y_b = float(input("  y_b (cm) [默认 -0.5]: ") or "-0.5")
+    z_b = float(input("  z_b (cm) [默认 -0.5]: ") or "-0.5")
 
     # 测量误差范围
     console.print("\n[bold green]--- 测量误差范围 ---[/bold green]")
-    error_range_um = float(input("  测量误差范围 (μm) [默认 1.0]: ") or "1.0")
+    error_range_um = float(input("  测量误差范围 (μm) [默认 10.0]: ") or "10.0")
 
     # 蒙特卡洛采样次数
     console.print("\n[bold green]--- 蒙特卡洛模拟参数 ---[/bold green]")
@@ -67,6 +71,7 @@ def interactive_input():
     generate_plots = generate_plots_input in ["y", "yes", "是"]
 
     return {
+        "screen_distance": screen_distance,
         "x_t": x_t,
         "y_t": y_t,
         "z_t": z_t,
@@ -88,7 +93,8 @@ def run_analysis_with_params(params: dict, generate_plots: bool = None):
         params: 参数字典
         generate_plots: 是否生成可视化图表
     """
-    analyzer = PrecisionAnalyzer()
+    screen_distance = params.get("screen_distance", 10.0)
+    analyzer = PrecisionAnalyzer(screen_distance=screen_distance)
 
     x_t = params["x_t"]
     y_t = params["y_t"]
@@ -118,6 +124,7 @@ def run_analysis_with_params(params: dict, generate_plots: bool = None):
     params_table.add_column("数值", style="green", justify="right")
     params_table.add_column("说明", style="yellow", justify="left")
 
+    params_table.add_row("屏幕距离", f"{screen_distance:.2f} cm", "前后屏幕之间的距离")
     params_table.add_row("P_t", f"({x_t:.2f}, {y_t:.2f}, {z_t:.2f}) cm", "目标点位置")
     params_table.add_row(
         "P_f", f"({analyzer.X_F:.2f}, {y_f:.2f}, {z_f:.2f}) cm", "前接收屏位置"
@@ -306,9 +313,15 @@ def run_analysis_with_params(params: dict, generate_plots: bool = None):
 
     conclusion_table.add_row("解析估计", f"±{analytical['sigma_h'] * 10000:.4f} μm")
     conclusion_table.add_row("蒙特卡洛 (1σ)", f"±{mc_results['h_std'] * 10000:.4f} μm")
+
+    # 计算 95% 置信区间相对于均值的偏差（取上下界中较大的偏差）
+    ci_lower_dev = abs(mc_results["h_mean"] - mc_results["h_95_ci"][0]) * 10000
+    ci_upper_dev = abs(mc_results["h_95_ci"][1] - mc_results["h_mean"]) * 10000
+    ci_deviation = max(ci_lower_dev, ci_upper_dev)
+
     conclusion_table.add_row(
         "95% 置信区间",
-        f"±{(mc_results['h_95_ci'][1] - mc_results['h_95_ci'][0]) / 2 * 10000:.4f} μm",
+        f"±{ci_deviation:.4f} μm",
     )
 
     most_sensitive = sorted_sens[0]
@@ -339,7 +352,7 @@ def run_analysis_with_params(params: dict, generate_plots: bool = None):
         console.print("\n[bold cyan]📊 正在生成可视化图表...[/bold cyan]")
 
         # 创建结果目录
-        results_dir = "../results"
+        results_dir = "results"
         os.makedirs(results_dir, exist_ok=True)
 
         from dcpam_cv.precision import (
@@ -408,14 +421,15 @@ def main():
     else:
         # 默认参数
         params = {
+            "screen_distance": 10.0,
             "x_t": 0.0,
             "y_t": 0.0,
-            "z_t": -200.0,
+            "z_t": -150.0,
             "y_f": 0.5,
             "z_f": 0.5,
             "y_b": -0.5,
             "z_b": -0.5,
-            "error_range_um": 1.0,
+            "error_range_um": 10.0,
             "n_samples": 10000,
             "generate_plots": False,
         }

@@ -12,10 +12,17 @@ warnings.filterwarnings("ignore")
 class PrecisionAnalyzer:
     """精度分析器"""
 
-    def __init__(self):
-        # 固定参数
-        self.X_F = 5.0  # P_f 的 x 坐标 (cm)
-        self.X_B = -5.0  # P_b 的 x 坐标 (cm)
+    def __init__(self, screen_distance: float = 10.0):
+        """
+        初始化精度分析器
+
+        Args:
+            screen_distance: 前后屏幕之间的距离 (cm)，默认 10.0 cm
+        """
+        # 前后屏幕位置（基于屏幕距离，对称分布）
+        self.screen_distance = screen_distance
+        self.X_F = screen_distance / 2  # P_f 的 x 坐标 (cm)
+        self.X_B = -screen_distance / 2  # P_b 的 x 坐标 (cm)
 
         # 误差范围
         self.error_range = 0.0001  # 1 μm = 0.0001 cm
