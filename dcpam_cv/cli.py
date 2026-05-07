@@ -6,10 +6,13 @@ import os
 import sys
 
 import cv2
+from rich.console import Console
 
 from .path import DCPAMPaths
 from .pipeline import DCPAMPipeline
 from .startup import startup
+
+_console = Console()
 
 
 def _ensure_aravis_libs() -> None:
@@ -30,15 +33,15 @@ def _capture_once(camera, pipeline: DCPAMPipeline, paths: DCPAMPaths) -> None:
     camera.save(pair)
 
     ts = pair.timestamp.strftime("%H:%M:%S")
-    print(f"  [{ts}] Captured pair (uid: {pair.uid})")
-    print(f"  Saved: {pair.front_path}")
-    print(f"  Saved: {pair.rear_path}")
+    _console.print(f"  [bold]\\[{ts}][/] Captured pair [cyan](uid: {pair.uid})[/]")
+    _console.print(f"  [dim]Saved: {pair.front_path}[/]")
+    _console.print(f"  [dim]Saved: {pair.rear_path}[/]")
 
     front_img = cv2.imread(str(pair.front_path), cv2.IMREAD_GRAYSCALE)
     rear_img = cv2.imread(str(pair.rear_path), cv2.IMREAD_GRAYSCALE)
 
     if front_img is None or rear_img is None:
-        print("  [WARN] 图像读取失败，跳过测量")
+        _console.print("  [bold red]✗[/] 图像读取失败，跳过测量")
         return
 
     try:
@@ -47,15 +50,16 @@ def _capture_once(camera, pipeline: DCPAMPipeline, paths: DCPAMPaths) -> None:
         result_path = paths.capture_dir(pair.uid) / "result.json"
         result_path.write_text(json.dumps(result.to_record(), indent=2, ensure_ascii=False))
 
-        print(f"  [bold green]Distance H = {result.distance:.4f}[/]")
-        print(f"  Result: {result_path}")
+        _console.print()
+        _console.print(f"  [bold green]Distance H = {result.distance:.4f}[/]")
+        _console.print(f"  [dim]Result: {result_path}[/]")
     except ValueError as e:
-        print(f"  [WARN] 测量失败: {e}")
+        _console.print(f"  [bold red]✗[/] 测量失败: {e}")
 
 
 def _interactive(camera, pipeline: DCPAMPipeline, paths: DCPAMPaths) -> None:
     """交互模式：ENTER 拍照，Q 退出。"""
-    print("  Press ENTER to capture, Q to quit.\n")
+    _console.print("  Press [bold]ENTER[/] to capture, [bold]Q[/] to quit.\n")
 
     while True:
         user_input = input("> ").strip().lower()
@@ -64,7 +68,7 @@ def _interactive(camera, pipeline: DCPAMPipeline, paths: DCPAMPaths) -> None:
         if user_input != "":
             continue
         _capture_once(camera, pipeline, paths)
-        print()
+        _console.print()
 
 
 def main() -> None:
@@ -90,4 +94,4 @@ def main() -> None:
         else:
             _interactive(camera, pipeline, paths)
 
-    print("  Cameras closed. Bye.")
+    _console.print("  [dim]Cameras closed. Bye.[/]")
