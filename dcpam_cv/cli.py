@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
-import subprocess
 import sys
 
-from .path import DCPAMPaths
+import cv2
 
-_CAMERA_SUBNET = "192.168.0"
-_HOST_IP = f"{_CAMERA_SUBNET}.1"
-_NETMASK = "255.255.255.0"
+from .path import DCPAMPaths
+from .pipeline import DCPAMPipeline
+from .startup import startup
 
 
 def _ensure_aravis_libs() -> None:
@@ -24,43 +24,8 @@ def _ensure_aravis_libs() -> None:
         os.execv(sys.argv[0], sys.argv)
 
 
-def _ensure_camera_network() -> None:
-    """检测并配置相机子网，需要 sudo 权限。"""
-    if sys.platform != "darwin":
-        return
-    result = subprocess.run(["ifconfig"], capture_output=True, text=True)
-    if _HOST_IP in result.stdout:
-        return
-
-    iface = _find_ethernet_iface(result.stdout)
-    if iface is None:
-        print(f"  [WARN] 未找到活跃的以太网口，跳过网络配置")
-        return
-
-    print(f"  配置 {iface} → {_HOST_IP} (需要 sudo 权限)")
-    subprocess.run(
-        ["sudo", "ifconfig", iface, _HOST_IP, "netmask", _NETMASK, "up"],
-        check=True,
-    )
-
-
-def _find_ethernet_iface(ifconfig_output: str) -> str | None:
-    """从 ifconfig 输出中找到活跃的千兆以太网口。"""
-    current_iface = None
-    is_gigabit = False
-    for line in ifconfig_output.splitlines():
-        if not line.startswith("\t") and ":" in line:
-            current_iface = line.split(":")[0]
-            is_gigabit = False
-        if current_iface and "1000baseT" in line:
-            is_gigabit = True
-        if current_iface and is_gigabit and "status: active" in line:
-            return current_iface
-    return None
-
-
-def _capture_once(camera) -> None:
-    """单次拍照并保存。"""
+def _capture_once(camera, pipeline: DCPAMPipeline, paths: DCPAMPaths) -> None:
+    """单次拍照 + 测量 + 保存结果。"""
     pair = camera.capture()
     camera.save(pair)
 
@@ -69,10 +34,28 @@ def _capture_once(camera) -> None:
     print(f"  Saved: {pair.front_path}")
     print(f"  Saved: {pair.rear_path}")
 
+    front_img = cv2.imread(str(pair.front_path), cv2.IMREAD_GRAYSCALE)
+    rear_img = cv2.imread(str(pair.rear_path), cv2.IMREAD_GRAYSCALE)
 
-def _interactive(camera) -> None:
+    if front_img is None or rear_img is None:
+        print("  [WARN] 图像读取失败，跳过测量")
+        return
+
+    try:
+        result = pipeline.measure(front_img, rear_img, pair.uid, pair.timestamp)
+
+        result_path = paths.capture_dir(pair.uid) / "result.json"
+        result_path.write_text(json.dumps(result.to_record(), indent=2, ensure_ascii=False))
+
+        print(f"  [bold green]Distance H = {result.distance:.4f}[/]")
+        print(f"  Result: {result_path}")
+    except ValueError as e:
+        print(f"  [WARN] 测量失败: {e}")
+
+
+def _interactive(camera, pipeline: DCPAMPipeline, paths: DCPAMPaths) -> None:
     """交互模式：ENTER 拍照，Q 退出。"""
-    print("  Ready. Press ENTER to capture, Q to quit.\n")
+    print("  Press ENTER to capture, Q to quit.\n")
 
     while True:
         user_input = input("> ").strip().lower()
@@ -80,16 +63,13 @@ def _interactive(camera) -> None:
             break
         if user_input != "":
             continue
-        _capture_once(camera)
+        _capture_once(camera, pipeline, paths)
         print()
 
 
 def main() -> None:
     """dcpam CLI 入口。"""
     _ensure_aravis_libs()
-    _ensure_camera_network()
-
-    from .camera import DualCamera
 
     parser = argparse.ArgumentParser(description="DCPAM — Dual-Camera Point-to-Axis Measurement")
     parser.add_argument("-o", "--once", action="store_true", help="单次拍照后退出")
@@ -98,13 +78,16 @@ def main() -> None:
     paths = DCPAMPaths()
     paths.ensure_dirs()
 
-    print("\n  DCPAM — Dual-Camera Point-to-Axis Measurement")
-    print(f"  Config: {paths.root}/\n")
+    startup(paths)
+
+    from .camera import DualCamera
+
+    pipeline = DCPAMPipeline(paths)
 
     with DualCamera(paths=paths) as camera:
         if args.once:
-            _capture_once(camera)
+            _capture_once(camera, pipeline, paths)
         else:
-            _interactive(camera)
+            _interactive(camera, pipeline, paths)
 
     print("  Cameras closed. Bye.")
