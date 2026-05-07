@@ -86,7 +86,7 @@ def _run_pipeline(
         result_path.write_text(json.dumps(result.to_record(), indent=2, ensure_ascii=False))
 
         console.print()
-        console.print(f"  [bold green]Distance H = {result.distance:.4f}[/]")
+        console.print(f"  [bold green]Distance H = {result.distance:.4f} mm[/]")
         console.print(f"  [dim]Result: {result_path}[/]")
     except ValueError as e:
         console.print(f"  [bold red]✗[/] 测量失败: {e}")

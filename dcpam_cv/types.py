@@ -57,7 +57,7 @@ class MeasurementResult(BaseModel):
         return {
             "uid": self.uid,
             "timestamp": self.timestamp.isoformat(),
-            "distance": self.distance,
+            "distance_mm": self.distance,
             "spots": self.spots.model_dump(),
             "laser_axis": self.laser_axis.model_dump(),
             "target_point": self.target_point.model_dump(),
