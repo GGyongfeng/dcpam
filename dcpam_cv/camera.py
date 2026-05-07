@@ -23,9 +23,17 @@ def _get_aravis():
     """延迟导入 Aravis，确保 DYLD 环境变量已设置。"""
     global _aravis
     if _aravis is None:
-        import gi
-        gi.require_version("Aravis", "0.8")
-        from gi.repository import Aravis as _Arv
+        try:
+            import gi
+            gi.require_version("Aravis", "0.8")
+            from gi.repository import Aravis as _Arv
+        except (ImportError, ValueError) as exc:
+            raise RuntimeError(
+                "相机功能需要 Aravis + PyGObject。请安装：\n"
+                "  brew install aravis pygobject3 libffi\n"
+                "  PKG_CONFIG_PATH=\"/opt/homebrew/opt/libffi/lib/pkgconfig\" "
+                "uv pip install 'dcpam[camera]'"
+            ) from exc
         _aravis = _Arv
     return _aravis
 
