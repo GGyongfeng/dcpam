@@ -1,19 +1,64 @@
-# dapam
-DCPAM: Dual-Camera-Based Point-to-Axis Measurement Model with Laser Reference Line
-基于双相机系统和激光基准线的三维点线距离测量模型
+# DCPAM
 
-## 三种模型实现：
-- DCPAM-CV : 基于传统 CV(计算机视觉)模型
-- DCPAM-MLP : 基于 MLP(多层感知机)模型
-- DCPAM-CNN : 基于CNN(conv Nature Network)模型
+English | [中文](README.zh.md)
 
-## QUICK START
+DCPAM is a dual-camera point-to-axis measurement project built around a laser reference line.
+The current repository mainly contains a classical computer vision workflow for geometry and precision analysis, plus a Daheng dual-camera capture utility.
 
-1. 运行下面指令
+## Features
+
+- Compute the distance from a target point `P_t` to the axis defined by two measured points `P_f` and `P_b`
+- Estimate measurement uncertainty with analytical error propagation
+- Validate uncertainty with Monte Carlo simulation
+- Visualize the 3D geometry, distance distribution, and sensitivity contribution
+- Capture synchronized image pairs from two Daheng cameras for data collection
+
+## Project Status
+
+This repository currently ships working code for the CV-oriented analysis flow.
+The README previously mentioned `MLP` and `CNN` variants, but those implementations are not present in the current tree yet.
+
+## Installation
+
+Clone the repository and install the Python dependencies with `uv`:
+
 ```bash
 git clone https://github.com/GGyongfeng/dcpam.git
 cd dcpam
 uv sync
 ```
 
-2. 直接运行 & 学习 scripts 下的脚本
+The dual-camera capture script also requires the Daheng Galaxy SDK and its Python binding `gxipy`.
+That SDK is vendor-provided and is not installed by `uv sync`.
+
+## Usage
+
+Run the precision analysis script:
+
+```bash
+uv run python scripts/run_analysis.py
+```
+
+Run the Daheng dual-camera capture utility:
+
+```bash
+uv run python dual_daheng_capture.py
+```
+
+When you use the capture utility, make sure:
+
+- Two Daheng cameras are connected
+- The Daheng Galaxy SDK is installed
+- `gxipy` is available from the SDK runtime
+
+## Repository Layout
+
+- `dcpam_cv/`: reusable CV and precision-analysis code
+- `scripts/`: runnable scripts
+- `pictures/`: saved capture images
+- `docs/`: project notes and conventions
+- `dual_daheng_capture.py`: live preview and pair capture entrypoint
+
+## License
+
+No license file is included in the current repository yet.
