@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -130,7 +129,7 @@ class DualCamera:
             raise RuntimeError("相机未打开，请先调用 open()")
 
         timestamp = datetime.now()
-        uid = uuid.uuid4().hex[:6]
+        uid = f"C{timestamp.strftime('%Y%m%d_%H%M%S')}"
 
         return ImagePair(
             front=self._grab_frame(self._front),
