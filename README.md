@@ -23,6 +23,12 @@ cd dcpam
 uv sync
 ```
 
+全局安装（可在任意目录使用 `dcpam` 命令）：
+
+```bash
+uv tool install -e '.[camera]'
+```
+
 ### macOS 额外依赖
 
 相机采集基于 [Aravis](https://github.com/AravisProject/aravis)（开源 GigE Vision 库），macOS 上需要：
@@ -47,21 +53,33 @@ sudo ifconfig en6 192.168.0.1 netmask 255.255.255.0 up
 
 ## Usage
 
-### 相机拍照
+### 相机测量
 
-单次拍照（拍一对后退出）：
+交互模式（ENTER 拍照+测量，Q 退出）：
 
 ```bash
 uv run dcpam
 ```
 
-交互模式（ENTER 拍照，Q 退出）：
+单次拍照后退出：
 
 ```bash
-uv run dcpam -i
+uv run dcpam -o
 ```
 
-图片保存到 `~/.dcpam/images/`，命名格式：`{YYYYMMDD_HHMMSS}_{front|rear}_{uid}.png`
+仅拍照，跳过测量：
+
+```bash
+uv run dcpam -o -c
+```
+
+Mock 模式（从 `~/.dcpam/mock/` 加载图片，无需相机）：
+
+```bash
+uv run dcpam -m
+```
+
+数据保存到 `~/.dcpam/captures/{uid}/`，包含 `front.png`、`rear.png`、`result.json`。
 
 ### 精度分析
 

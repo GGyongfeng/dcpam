@@ -84,6 +84,7 @@ Thumbs.db
 .env.local
 
 output/
+dataset/
 
 # Reference materials (templates, calibration files)
 reference/
