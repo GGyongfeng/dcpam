@@ -1,0 +1,117 @@
+% ============================================================
+%  V. Camera Calibration
+% ============================================================
+\section{Camera Calibration}
+\label{sec:calibration}
+
+Accurate camera calibration is a prerequisite for the DCPAM
+pipeline.
+%
+This section describes the calibration of intrinsic
+parameters, extrinsic parameters, and the screen-plane
+distance $Z_s$.
+
+
+\subsection{Intrinsic Parameter Calibration}
+\label{sec:intrinsic}
+
+Each camera is modelled with the SIMPLE\_RADIAL model:
+focal length $f$, principal point $(c_x, c_y)$,
+and a single radial distortion coefficient $k$.
+%
+The intrinsic matrix is
+%
+\begin{equation}
+  K =
+  \begin{bmatrix}
+    f & 0 & c_x \\
+    0 & f & c_y \\
+    0 & 0 & 1
+  \end{bmatrix}
+  \label{eq:K}
+\end{equation}
+
+Calibration is performed using COLMAP's feature extraction
+and Structure-from-Motion pipeline on a set of checkerboard
+images captured from multiple viewpoints.
+
+% TODO: 补充标定板规格、标定图片数量、重投影误差等实验细节
+% TODO: 补充畸变矫正的具体处理方法
+
+
+\subsection{Extrinsic Parameter Calibration}
+\label{sec:extrinsic}
+
+The extrinsic parameters describe the pose of each camera
+relative to a common world frame $W$:
+%
+\begin{equation}
+  E_i =
+  \begin{bmatrix}
+    R_i & t_i \\
+    \mathbf{0}^T & 1
+  \end{bmatrix},
+  \quad i = 1, 2
+  \label{eq:extrinsic}
+\end{equation}
+
+The relative transformation $T_{C2 \to C1}$ is then obtained
+via~\eqref{eq:T-from-ext}.
+
+The dual-camera calibration procedure follows these steps:
+
+(1)~Capture synchronised image pairs from both cameras.
+
+(2)~Extract and match features across all images simultaneously.
+
+(3)~Run SfM mapping with undistortion.
+
+(4)~Export intrinsic and extrinsic parameters.
+
+(5)~Compute relative pose (expected baseline $\sim$7.5--8.0\,cm).
+
+% TODO: 补充 COLMAP 标定的具体步骤截图和参数设置
+% TODO: 补充标定精度验证实验
+
+
+\subsection{Screen-Plane Distance Calibration}
+\label{sec:zs}
+
+The distance $Z_s$ from the camera optical centre to the
+receiving screen along the optical axis is a critical
+parameter, as it scales the back-projection~\eqref{eq:backproj}.
+%
+$Z_s$ is determined by the mechanical dimensions of the
+probe fixture and verified by measurement.
+
+The composite matrix $Z_s\, K_i^{-1}$ can also be calibrated
+directly by observing known points on the receiving screen.
+
+% TODO: 补充 Zs 标定方法的详细描述和精度分析
+
+
+\subsection{Camera Tilt Angle Calibration}
+\label{sec:tilt-calib}
+
+When the camera is mounted in a nominally horizontal
+orientation, a residual tilt angle $\alpha$ may exist
+between the camera's $x$-pixel direction and the
+horizontal direction of the world frame.
+%
+This angle must be calibrated and compensated.
+
+The relationship between a world-frame point $(X, Y)$ and
+the camera-frame point $(x, y)$ under a planar rotation is
+%
+\begin{equation}
+  \begin{bmatrix} x \\ y \end{bmatrix}
+  =
+  \begin{bmatrix}
+    \cos\alpha & -\sin\alpha \\
+    \sin\alpha &  \cos\alpha
+  \end{bmatrix}
+  \begin{bmatrix} X \\ Y \end{bmatrix}
+  \label{eq:tilt-rotation}
+\end{equation}
+
+% TODO: 补充 alpha 角度标定的实验方法

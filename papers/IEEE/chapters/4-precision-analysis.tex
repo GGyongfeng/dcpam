@@ -1,0 +1,185 @@
+% ============================================================
+%  IV. Precision Analysis
+% ============================================================
+\section{Precision Analysis}
+\label{sec:precision}
+
+% TODO: 补充精度分析的整体流程图
+
+\subsection{End-to-End Matrix Formulation}
+\label{sec:matrix-form}
+
+Combining the transformations from
+Sections~\ref{sec:pixel2cam}--\ref{sec:c2toc1},
+the two virtual points can be expressed as linear functions
+of the pixel coordinates:
+%
+\begin{align}
+  P^f_{\mathrm{virtual}}
+    &= H_1
+       \begin{bmatrix}
+         Z_s\, K_1^{-1}\, \mathbf{p}_1 \\ 1
+       \end{bmatrix}
+  \label{eq:pf-end2end} \\[6pt]
+  P^b_{\mathrm{virtual}}
+    &= T_{C2 \to C1} \cdot H_2
+       \begin{bmatrix}
+         Z_s\, K_2^{-1}\, \mathbf{p}_2 \\ 1
+       \end{bmatrix}
+  \label{eq:pb-end2end}
+\end{align}
+
+Since $Z_s K_i^{-1}$ and the rigid-body matrices are all
+constant for a given configuration,
+each coordinate of
+$P^f_{\mathrm{virtual}} = (x_f, y_f, z_f)^T$ and
+$P^b_{\mathrm{virtual}} = (x_b, y_b, z_b)^T$
+is an \emph{affine} function of the pixel coordinates:
+%
+\begin{align}
+  x_f &= A_1\, u_1 + B_1\, v_1 + C_1 \notag\\
+  y_f &= D_1\, u_1 + E_1\, v_1 + F_1 \notag\\
+  z_f &= G_1\, u_1 + H_1\, v_1 + I_1
+  \label{eq:affine-f}
+\end{align}
+\begin{align}
+  x_b &= A_2\, u_2 + B_2\, v_2 + C_2 \notag\\
+  y_b &= D_2\, u_2 + E_2\, v_2 + F_2 \notag\\
+  z_b &= G_2\, u_2 + H_2\, v_2 + I_2
+  \label{eq:affine-b}
+\end{align}
+%
+where the coefficients $A_1, B_1, \ldots, I_2$ are
+determined by the composite matrix products.
+
+The target point is
+%
+\begin{equation}
+  P_T =
+  \begin{bmatrix} x_0 \\ y_0 \\ z_0 + l \end{bmatrix}
+  \label{eq:pt}
+\end{equation}
+%
+where $(x_0, y_0, z_0)^T$ is the tool-bar mounting position
+and $l = l_T$ is the tool-bar length.
+
+
+\subsection{Expanded Distance Expression}
+\label{sec:expanded}
+
+Substituting the affine expressions into
+\eqref{eq:distance}--\eqref{eq:w-vec},
+the measurement $H$ becomes an explicit function of
+five variables:
+%
+\begin{equation}
+  H(u_1, v_1, u_2, v_2, l)
+    = \frac{
+        \left\| \vec{d} \times \vec{t} \right\|
+      }{
+        \|\vec{d}\|
+      }
+  \label{eq:H-expanded}
+\end{equation}
+%
+with
+%
+\begin{equation}
+  \vec{d} =
+  \begin{bmatrix}
+    (A_2 u_2 - A_1 u_1)+(B_2 v_2 - B_1 v_1)+(C_2-C_1) \\
+    (D_2 u_2 - D_1 u_1)+(E_2 v_2 - E_1 v_1)+(F_2-F_1) \\
+    (G_2 u_2 - G_1 u_1)+(H_2 v_2 - H_1 v_1)+(I_2-I_1)
+  \end{bmatrix}
+  \label{eq:d-vec}
+\end{equation}
+%
+\begin{equation}
+  \vec{t} =
+  \begin{bmatrix}
+    -A_1 u_1 - B_1 v_1 + (x_0 - C_1) \\
+    -D_1 u_1 - E_1 v_1 + (y_0 - F_1) \\
+    -G_1 u_1 - H_1 v_1 + l + (z_0 - I_1)
+  \end{bmatrix}
+  \label{eq:t-vec}
+\end{equation}
+
+\textbf{Key observation.}
+When $l$ is fixed and only the pixel coordinates
+$u_1, v_1, u_2, v_2$ vary
+(e.g.\ due to pixel extraction noise),
+the resulting change $\Delta H$ is
+\emph{essentially independent of $l$}.
+%
+The absolute value of $H$ depends on $l$,
+but the measurement uncertainty $\sigma_H$
+depends only on the pixel noise magnitude and the
+system coefficients $A_1, \ldots, I_2$.
+
+% TODO: 用具体数值做一个数值示例证明以上结论
+
+
+\subsection{Error Propagation}
+\label{sec:error-prop}
+
+By first-order Taylor expansion, the variance of $H$ is
+%
+\begin{equation}
+  \sigma_H^2 \approx
+    \sum_{q \in \mathcal{Q}}
+    \left(\frac{\partial H}{\partial q}\right)^2
+    \sigma_q^2
+  \label{eq:error-prop}
+\end{equation}
+%
+where
+$\mathcal{Q} = \{u_1, v_1, u_2, v_2\}$
+(or equivalently $\{y_f, z_f, y_b, z_b\}$ after
+coordinate transformation),
+and $\sigma_q$ is the standard deviation of each
+input parameter.
+
+The partial derivatives can be computed analytically
+from~\eqref{eq:H-expanded} or numerically via finite
+differences.
+
+% TODO: 补充解析偏导数的显式表达式
+
+
+\subsection{Monte Carlo Validation}
+\label{sec:mc}
+
+To validate the linear error propagation, we perform
+a Monte Carlo simulation:
+%
+$N = 10{,}000$ samples are drawn with each pixel coordinate
+perturbed uniformly within $\pm 1\,\mu\mathrm{m}$
+(equivalent pixel noise).
+%
+The empirical standard deviation $\hat{\sigma}_H$ is compared
+with the analytical $\sigma_H$ from~\eqref{eq:error-prop}.
+
+% TODO: 补充 Monte Carlo 结果表格和直方图
+%       （参考 scripts/run_analysis.py 的输出）
+
+
+\subsection{Sensitivity Analysis}
+\label{sec:sensitivity}
+
+Each input parameter is perturbed by $\pm 1\,\mu\mathrm{m}$
+independently, and the resulting $|\Delta H|$ is recorded.
+%
+The variance contribution of each parameter is
+%
+\begin{equation}
+  \eta_q
+    = \frac{
+        \left(\frac{\partial H}{\partial q}\right)^2 \sigma_q^2
+      }{
+        \sigma_H^2
+      }
+    \times 100\%
+  \label{eq:variance-contrib}
+\end{equation}
+
+% TODO: 补充灵敏度分析的实验数据表格和图表

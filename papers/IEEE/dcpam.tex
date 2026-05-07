@@ -1,0 +1,51 @@
+\documentclass[lettersize,journal]{IEEEtran}
+
+\usepackage{amsmath,amsfonts,amssymb}
+\usepackage{algorithmic}
+\usepackage{algorithm}
+\usepackage{array}
+\usepackage[caption=false,font=normalsize,labelfont=sf,textfont=sf]{subfig}
+\usepackage{textcomp}
+\usepackage{stfloats}
+\usepackage{url}
+\usepackage{graphicx}
+\usepackage{cite}
+\usepackage{bm}
+\usepackage{booktabs}
+
+\hyphenation{op-tical net-works semi-conduc-tor}
+
+\begin{document}
+
+\title{DCPAM: A Dual-Camera-Based Point-to-Axis Measurement Model
+       with Laser Reference Line}
+
+% TODO: 补充作者信息、单位、邮箱
+\author{
+  Author~One,
+  Author~Two,
+  and~Author~Three
+  \thanks{Manuscript received XXXX XX, 2025.}
+  \thanks{The authors are with XXXX University, China.
+          (e-mail: xxxx@xxxx.edu.cn)}
+}
+
+\markboth{Journal of XXX,~Vol.~X, No.~X, 2025}%
+{Author \MakeLowercase{\textit{et al.}}:
+ DCPAM: Dual-Camera Point-to-Axis Measurement}
+
+\maketitle
+
+\input{chapters/0-abstract}
+\input{chapters/1-introduction}
+\input{chapters/2-model-overview}
+\input{chapters/3-dcpam-cv}
+\input{chapters/4-precision-analysis}
+\input{chapters/5-calibration}
+\input{chapters/6-mirror-calibration}
+\input{chapters/7-dcpam-cnn}
+\input{chapters/8-tilt-deviation}
+\input{chapters/9-experiments}
+\input{chapters/10-conclusion}
+
+\end{document}

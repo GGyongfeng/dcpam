@@ -1,0 +1,38 @@
+% ============================================================
+%  Abstract & Keywords
+% ============================================================
+\begin{abstract}
+  In large-scale rotating machinery such as turbines, generators,
+  and compressors, shaft alignment accuracy is critical to
+  operational balance and equipment lifespan.
+  %
+  Traditional steel-wire alignment methods suffer from
+  wire sag, vibration sensitivity, and limited measurement range.
+  %
+  This paper proposes DCPAM
+  (Dual-Camera-based Point-to-Axis Measurement),
+  a non-contact measurement model that replaces the steel wire
+  with a laser reference line and employs a dual-camera system
+  to reconstruct the three-dimensional laser axis.
+  %
+  The model computes the perpendicular distance from any target
+  point to the reconstructed laser axis through a pipeline of
+  pixel extraction, camera-to-world coordinate transformation,
+  mirror-reflection virtual-image mapping, and cross-product
+  distance calculation.
+  %
+  Two parameter-tuning strategies are presented:
+  DCPAM-CV, an experience-driven classical computer-vision
+  workflow, and DCPAM-CNN, a convolutional-neural-network-based
+  approach.
+  %
+  A closed-form error propagation analysis and Monte Carlo
+  validation quantify the measurement uncertainty under
+  micrometer-level perturbations.
+  % TODO: 补充实验结果摘要——最终精度数据
+\end{abstract}
+
+\begin{IEEEkeywords}
+  Shaft alignment, laser measurement, dual-camera system,
+  point-to-axis distance, error propagation, computer vision.
+\end{IEEEkeywords}

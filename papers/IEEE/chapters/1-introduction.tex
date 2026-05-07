@@ -1,0 +1,63 @@
+% ============================================================
+%  I. Introduction
+% ============================================================
+\section{Introduction}
+
+\IEEEPARstart{I}{n} the power generation, marine, and aerospace
+industries, large rotating equipment---turbines, generators,
+compressors---features long shafts whose installation accuracy
+directly governs operational balance and service life.
+%
+Shaft alignment (or ``centreline finding'') is therefore a
+critical step during installation and commissioning of such
+machinery~\cite{piotrowski2006shaft}.
+
+The prevailing industrial practice remains the
+\emph{steel-wire method}, in which a taut piano wire is
+stretched along the nominal shaft axis and the radial distance
+from each bearing journal to the wire is measured with a
+micrometer or dial indicator.
+%
+Despite its simplicity, the steel-wire method has well-known
+drawbacks:
+gravitational sag introduces systematic curvature
+that must be compensated;
+the wire is sensitive to air currents and mechanical vibration;
+and the achievable measurement range is limited by wire tension
+and sag correction accuracy.
+
+Laser-based alignment offers a promising alternative.
+%
+By replacing the steel wire with a laser beam as the reference
+axis, the problems of sag and vibration sensitivity are
+eliminated.
+%
+However, the laser beam itself is invisible in free space;
+its position can only be observed where it strikes a
+receiving surface.
+%
+This paper proposes \textbf{DCPAM}
+(Dual-Camera-based Point-to-Axis Measurement),
+a model that employs two cameras---each observing the laser
+spot on its own receiving screen---to reconstruct the
+three-dimensional laser axis and compute the perpendicular
+distance from an arbitrary target point to that axis.
+
+The contributions of this work are as follows:
+%
+(1)~A complete mathematical formulation of the dual-camera
+laser measurement pipeline, from pixel extraction to
+point-to-axis distance computation.
+%
+(2)~Two parameter-tuning strategies:
+DCPAM-CV (classical computer vision) and
+DCPAM-CNN (convolutional neural network).
+%
+(3)~A closed-form error propagation analysis with
+Monte Carlo validation.
+%
+(4)~A tilt-deviation rejection model that determines
+the maximum allowable probe inclination for a given
+target accuracy.
+
+% TODO: 补充文献综述——现有激光对中方法、双目视觉测量、工业对中标准
