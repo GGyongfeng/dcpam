@@ -20,10 +20,13 @@ class DCPAMPaths:
         return self.root / "camera.toml"
 
     @property
-    def images_dir(self) -> Path:
-        return self.root / "images"
+    def captures_dir(self) -> Path:
+        return self.root / "captures"
+
+    def capture_dir(self, uid: str) -> Path:
+        return self.captures_dir / uid
 
     def ensure_dirs(self) -> None:
         """首次运行时创建目录结构。"""
         self.root.mkdir(parents=True, exist_ok=True)
-        self.images_dir.mkdir(exist_ok=True)
+        self.captures_dir.mkdir(exist_ok=True)
