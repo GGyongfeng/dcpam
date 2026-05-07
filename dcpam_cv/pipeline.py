@@ -52,7 +52,6 @@ class DCPAMPipeline:
         console.print(
             f"        front=({spots.front.u:.1f}, {spots.front.v:.1f})"
             f"  rear=({spots.rear.u:.1f}, {spots.rear.v:.1f})",
-            style="dim",
         )
 
         with step("3/6 反投影"):
@@ -61,7 +60,6 @@ class DCPAMPipeline:
         console.print(
             f"        front=({front_3d.x:.3f}, {front_3d.y:.3f}, {front_3d.z:.3f})"
             f"  rear=({rear_3d.x:.3f}, {rear_3d.y:.3f}, {rear_3d.z:.3f})",
-            style="dim",
         )
 
         with step("4/6 镜面变换"):

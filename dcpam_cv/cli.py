@@ -35,7 +35,6 @@ def _capture_once(camera, pipeline: DCPAMPipeline, paths: DCPAMPaths) -> None:
         f"        uid={pair.uid}  {w}x{h}\n"
         f"        {capture_path}/front.png\n"
         f"        {capture_path}/rear.png",
-        style="dim",
     )
 
     front_img = cv2.imread(str(pair.front_path), cv2.IMREAD_GRAYSCALE)
@@ -53,7 +52,7 @@ def _capture_once(camera, pipeline: DCPAMPipeline, paths: DCPAMPaths) -> None:
 
         console.print()
         console.print(f"  [bold green]Distance H = {result.distance:.4f}[/]")
-        console.print(f"  [dim]{paths.capture_dir(pair.uid)}/[/]")
+        console.print(f"  [dim]Result: {result_path}[/]")
     except ValueError as e:
         console.print(f"  [bold red]✗[/] 测量失败: {e}")
 
