@@ -6,13 +6,10 @@ import os
 import sys
 
 import cv2
-from rich.console import Console
 
 from .path import DCPAMPaths
-from .pipeline import DCPAMPipeline
+from .pipeline import DCPAMPipeline, console, step
 from .startup import startup
-
-_console = Console()
 
 
 def _ensure_aravis_libs() -> None:
@@ -29,19 +26,21 @@ def _ensure_aravis_libs() -> None:
 
 def _capture_once(camera, pipeline: DCPAMPipeline, paths: DCPAMPaths) -> None:
     """单次拍照 + 测量 + 保存结果。"""
-    pair = camera.capture()
-    camera.save(pair)
-
-    ts = pair.timestamp.strftime("%H:%M:%S")
-    _console.print(f"  [bold]\\[{ts}][/] Captured pair [cyan](uid: {pair.uid})[/]")
-    _console.print(f"  [dim]Saved: {pair.front_path}[/]")
-    _console.print(f"  [dim]Saved: {pair.rear_path}[/]")
+    with step("1/6 拍照"):
+        pair = camera.capture()
+        camera.save(pair)
+    h, w = pair.front.shape[:2]
+    console.print(
+        f"        uid={pair.uid}  {w}x{h}"
+        f"  front={pair.front_path.name}  rear={pair.rear_path.name}",
+        style="dim",
+    )
 
     front_img = cv2.imread(str(pair.front_path), cv2.IMREAD_GRAYSCALE)
     rear_img = cv2.imread(str(pair.rear_path), cv2.IMREAD_GRAYSCALE)
 
     if front_img is None or rear_img is None:
-        _console.print("  [bold red]✗[/] 图像读取失败，跳过测量")
+        console.print("  [bold red]✗[/] 图像读取失败，跳过测量")
         return
 
     try:
@@ -50,16 +49,16 @@ def _capture_once(camera, pipeline: DCPAMPipeline, paths: DCPAMPaths) -> None:
         result_path = paths.capture_dir(pair.uid) / "result.json"
         result_path.write_text(json.dumps(result.to_record(), indent=2, ensure_ascii=False))
 
-        _console.print()
-        _console.print(f"  [bold green]Distance H = {result.distance:.4f}[/]")
-        _console.print(f"  [dim]Result: {result_path}[/]")
+        console.print()
+        console.print(f"  [bold green]Distance H = {result.distance:.4f}[/]")
+        console.print(f"  [dim]{paths.capture_dir(pair.uid)}/[/]")
     except ValueError as e:
-        _console.print(f"  [bold red]✗[/] 测量失败: {e}")
+        console.print(f"  [bold red]✗[/] 测量失败: {e}")
 
 
 def _interactive(camera, pipeline: DCPAMPipeline, paths: DCPAMPaths) -> None:
     """交互模式：ENTER 拍照，Q 退出。"""
-    _console.print("  Press [bold]ENTER[/] to capture, [bold]Q[/] to quit.\n")
+    console.print("  Press [bold]ENTER[/] to capture, [bold]Q[/] to quit.\n")
 
     while True:
         user_input = input("> ").strip().lower()
@@ -68,7 +67,7 @@ def _interactive(camera, pipeline: DCPAMPipeline, paths: DCPAMPaths) -> None:
         if user_input != "":
             continue
         _capture_once(camera, pipeline, paths)
-        _console.print()
+        console.print()
 
 
 def main() -> None:
@@ -94,4 +93,4 @@ def main() -> None:
         else:
             _interactive(camera, pipeline, paths)
 
-    _console.print("  [dim]Cameras closed. Bye.[/]")
+    console.print("  [dim]Cameras closed. Bye.[/]")

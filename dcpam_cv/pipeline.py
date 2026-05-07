@@ -19,21 +19,21 @@ from .steps import (
 )
 from .types import LaserAxis, MeasurementResult, Point3D
 
-_console = Console()
+console = Console()
 
 
 @contextmanager
-def _step(name: str) -> Generator[None, None, None]:
+def step(name: str) -> Generator[None, None, None]:
     """带 spinner 和计时的步骤上下文管理器。"""
-    with _console.status(f"  [cyan]{name}[/]", spinner="dots") as status:
+    with console.status(f"  [cyan]{name}[/]", spinner="dots"):
         t0 = time.perf_counter()
         yield
     elapsed = (time.perf_counter() - t0) * 1000
-    _console.print(f"  [green]✓[/] {name}  [dim]{elapsed:.1f}ms[/]")
+    console.print(f"  [green]✓[/] {name}  [dim]{elapsed:.1f}ms[/]")
 
 
 class DCPAMPipeline:
-    """5 步测量 pipeline: 光斑提取 → 反投影 → 镜面变换 → 坐标变换 → 距离计算。"""
+    """6 步测量 pipeline: 拍照 → 光斑提取 → 反投影 → 镜面变换 → 坐标变换 → 距离计算。"""
 
     def __init__(self, paths: DCPAMPaths) -> None:
         self.calib = load_calibration(paths.calibration_file)
@@ -46,33 +46,33 @@ class DCPAMPipeline:
         uid: str,
         timestamp: datetime,
     ) -> MeasurementResult:
-        """从前后相机图像计算目标点到激光轴线的距离。"""
-        with _step("1/5 光斑提取"):
+        """从前后相机图像计算目标点到激光轴线的距离（步骤 2-6）。"""
+        with step("2/6 光斑提取"):
             spots = extract_spots(front_image, rear_image, self.config.spot_extraction)
-        _console.print(
+        console.print(
             f"        front=({spots.front.u:.1f}, {spots.front.v:.1f})"
             f"  rear=({spots.rear.u:.1f}, {spots.rear.v:.1f})",
             style="dim",
         )
 
-        with _step("2/5 反投影"):
+        with step("3/6 反投影"):
             front_3d = back_project(spots.front, self.calib.front_camera, self.calib.geometry)
             rear_3d = back_project(spots.rear, self.calib.rear_camera, self.calib.geometry)
-        _console.print(
+        console.print(
             f"        front=({front_3d.x:.3f}, {front_3d.y:.3f}, {front_3d.z:.3f})"
             f"  rear=({rear_3d.x:.3f}, {rear_3d.y:.3f}, {rear_3d.z:.3f})",
             style="dim",
         )
 
-        with _step("3/5 镜面变换"):
+        with step("4/6 镜面变换"):
             front_virtual = mirror_transform(front_3d, self.calib.geometry, scale=1.0)
             rear_virtual = mirror_transform(rear_3d, self.calib.geometry, scale=2.0)
 
-        with _step("4/5 坐标变换"):
+        with step("5/6 坐标变换"):
             rear_in_c1 = rear_to_front(rear_virtual, self.calib.transform)
             axis = LaserAxis(front=front_virtual, rear=rear_in_c1)
 
-        with _step("5/5 距离计算"):
+        with step("6/6 距离计算"):
             target = self._target_point()
             distance = point_to_line_distance(target, axis)
 
