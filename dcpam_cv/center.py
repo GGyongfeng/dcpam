@@ -1,18 +1,11 @@
-import cv2
-import numpy as np
-from scipy import optimize
-import matplotlib.pyplot as plt
 import os
 from datetime import datetime
 
-# 读取图像
-image = cv2.imread("D:\\POWER\\circle_center\\img\\img\\X0000_Y0000_C1_01.bmp", cv2.IMREAD_GRAYSCALE)
+import cv2
+import matplotlib.pyplot as plt
+import numpy as np
+from scipy import optimize
 
-if image is None:
-    print("图像加载失败，请检查路径是否正确！")
-    exit()
-
-# ========== 重心法 ==========
 def centroid_method(img, threshold_ratio=0.5):
     """使用重心法计算光斑中心"""
     max_val = np.max(img)
@@ -34,7 +27,6 @@ def centroid_method(img, threshold_ratio=0.5):
     
     return x_center, y_center
 
-# ========== 高斯拟合 ==========
 def gaussian_fit(img, initial_guess=None):
     """使用二维高斯函数拟合光斑中心"""
     h, w = img.shape
@@ -65,7 +57,6 @@ def gaussian_fit(img, initial_guess=None):
     except:
         return x0, y0, None
 
-# ========== 改进算法 ==========
 def improved_circle_fit(img):
     """改进的圆拟合算法，返回圆心坐标和半径"""
     # 预处理
@@ -245,58 +236,56 @@ def show_image_with_title(image_path, title):
     plt.axis('off')
     plt.show()
 
-# ========== 主程序 ==========
-print("=" * 50)
-print("改进算法 - 亚像素圆心提取")
-print("=" * 50)
+if __name__ == "__main__":
+    image = cv2.imread(
+        "D:\\POWER\\circle_center\\img\\img\\X0000_Y0000_C1_01.bmp",
+        cv2.IMREAD_GRAYSCALE,
+    )
+    if image is None:
+        print("图像加载失败，请检查路径是否正确！")
+        raise SystemExit(1)
 
-# 创建结果文件夹
-result_folder = create_result_folder()
+    print("=" * 50)
+    print("改进算法 - 亚像素圆心提取")
+    print("=" * 50)
 
-# 运行改进算法
-x_final, y_final, radius = improved_circle_fit(image)
+    result_folder = create_result_folder()
+    x_final, y_final, radius = improved_circle_fit(image)
 
-if x_final is not None:
-    print(f"圆心坐标 (亚像素): ({x_final:.3f}, {y_final:.3f})")
-    print(f"估计半径: {radius:.2f} 像素")
-    
-    # 保存坐标到文件
-    with open(os.path.join(result_folder, 'circle_center_result.txt'), 'w') as f:
-        f.write(f"圆心坐标: ({x_final:.3f}, {y_final:.3f})\n")
-        f.write(f"估计半径: {radius:.2f} 像素\n")
-        f.write(f"图像尺寸: {image.shape[1]}x{image.shape[0]}\n")
-    
-    print("坐标已保存到 circle_center_result.txt")
-    
-    # 保存结果图像
-    save_result_image(image, x_final, y_final, radius, os.path.join(result_folder, "result_with_circle.jpg"))
-else:
-    print("未能检测到圆心")
-
-# 添加噪声并处理
-noise_levels = [0.05, 0.1, 0.2]  # 噪声强度
-for i, noise_level in enumerate(noise_levels, start=1):
-    noisy_image = add_noise(image, noise_type="gaussian", noise_level=noise_level)
-    x_noisy, y_noisy, radius_noisy = improved_circle_fit(noisy_image)
-    
-    print(f"\n处理噪声图像 {i} (噪声强度: {noise_level})")
-    if x_noisy is not None:
-        print(f"圆心坐标 (亚像素): ({x_noisy:.3f}, {y_noisy:.3f})")
-        print(f"估计半径: {radius_noisy:.2f} 像素")
-        
-        # 保存结果图像
-        save_result_image(noisy_image, x_noisy, y_noisy, radius_noisy, 
-                          os.path.join(result_folder, f"result_with_circle_noise_{i}.jpg"))
+    if x_final is not None:
+        print(f"圆心坐标 (亚像素): ({x_final:.3f}, {y_final:.3f})")
+        print(f"估计半径: {radius:.2f} 像素")
+        with open(os.path.join(result_folder, "circle_center_result.txt"), "w") as f:
+            f.write(f"圆心坐标: ({x_final:.3f}, {y_final:.3f})\n")
+            f.write(f"估计半径: {radius:.2f} 像素\n")
+            f.write(f"图像尺寸: {image.shape[1]}x{image.shape[0]}\n")
+        save_result_image(
+            image, x_final, y_final, radius,
+            os.path.join(result_folder, "result_with_circle.jpg"),
+        )
     else:
         print("未能检测到圆心")
 
-# 展示原始图片结果
-show_image_with_title(os.path.join(result_folder, "result_with_circle.jpg"), "Original Image with Circle")
+    for i, noise_level in enumerate([0.05, 0.1, 0.2], start=1):
+        noisy_image = add_noise(image, noise_type="gaussian", noise_level=noise_level)
+        x_noisy, y_noisy, radius_noisy = improved_circle_fit(noisy_image)
+        print(f"\n处理噪声图像 {i} (噪声强度: {noise_level})")
+        if x_noisy is not None:
+            print(f"圆心坐标 (亚像素): ({x_noisy:.3f}, {y_noisy:.3f})")
+            print(f"估计半径: {radius_noisy:.2f} 像素")
+            save_result_image(
+                noisy_image, x_noisy, y_noisy, radius_noisy,
+                os.path.join(result_folder, f"result_with_circle_noise_{i}.jpg"),
+            )
+        else:
+            print("未能检测到圆心")
 
-# 展示噪声图片结果
-for i in range(1, 4):
-    show_image_with_title(os.path.join(result_folder, f"result_with_circle_noise_{i}.jpg"), f"Noisy Image {i} with Circle")
-
-print("\n" + "=" * 50)
-print("处理完成")
-print("=" * 50)
+    show_image_with_title(
+        os.path.join(result_folder, "result_with_circle.jpg"),
+        "Original Image with Circle",
+    )
+    for i in range(1, 4):
+        show_image_with_title(
+            os.path.join(result_folder, f"result_with_circle_noise_{i}.jpg"),
+            f"Noisy Image {i} with Circle",
+        )
