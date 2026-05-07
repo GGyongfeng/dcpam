@@ -213,18 +213,24 @@ class DualCamera:
             camera.set_gain(hw.gain)
 
     def _grab_frame(self, handle: _CameraHandle) -> np.ndarray:
-        """从单个相机获取当前帧，转为 BGR numpy 数组。"""
+        """排空旧帧后等待最新帧，转为 BGR numpy 数组。"""
         arv = _get_aravis()
 
-        buffer = handle.stream.timeout_pop_buffer(3_000_000)
-        if buffer is None:
+        while True:
+            buf = handle.stream.try_pop_buffer()
+            if buf is None:
+                break
+            handle.stream.push_buffer(buf)
+
+        latest = handle.stream.timeout_pop_buffer(3_000_000)
+        if latest is None:
             raise RuntimeError(f"{handle.name} 相机帧获取超时")
 
-        if buffer.get_status() != arv.BufferStatus.SUCCESS:
-            handle.stream.push_buffer(buffer)
+        if latest.get_status() != arv.BufferStatus.SUCCESS:
+            handle.stream.push_buffer(latest)
             raise RuntimeError(f"{handle.name} 帧状态异常")
 
-        data = buffer.get_data()
+        data = latest.get_data()
         arr = np.frombuffer(data, dtype=np.uint8)
         pixel_format = handle.camera.get_pixel_format_as_string()
 
@@ -240,5 +246,5 @@ class DualCamera:
         else:
             bgr = arr.reshape(handle.height, handle.width, -1)
 
-        handle.stream.push_buffer(buffer)
+        handle.stream.push_buffer(latest)
         return bgr
