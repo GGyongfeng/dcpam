@@ -30,9 +30,11 @@ def _capture_once(camera, pipeline: DCPAMPipeline, paths: DCPAMPaths) -> None:
         pair = camera.capture()
         camera.save(pair)
     h, w = pair.front.shape[:2]
+    capture_path = paths.capture_dir(pair.uid)
     console.print(
-        f"        uid={pair.uid}  {w}x{h}"
-        f"  front={pair.front_path.name}  rear={pair.rear_path.name}",
+        f"        uid={pair.uid}  {w}x{h}\n"
+        f"        {capture_path}/front.png\n"
+        f"        {capture_path}/rear.png",
         style="dim",
     )
 

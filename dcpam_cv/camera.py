@@ -129,7 +129,7 @@ class DualCamera:
             raise RuntimeError("相机未打开，请先调用 open()")
 
         timestamp = datetime.now()
-        uid = f"C{timestamp.strftime('%Y%m%d_%H%M%S')}"
+        uid = f"C_{timestamp.strftime('%Y%m%d_%H%M%S')}"
 
         return ImagePair(
             front=self._grab_frame(self._front),
