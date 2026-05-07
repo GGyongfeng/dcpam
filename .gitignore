@@ -84,3 +84,15 @@ Thumbs.db
 .env.local
 
 output/
+
+# Reference materials (templates, calibration files)
+reference/
+
+# LaTeX auxiliary files
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.out
+*.synctex.gz
