@@ -140,12 +140,12 @@ class DualCamera:
         )
 
     def save(self, pair: ImagePair) -> ImagePair:
-        """保存图像对到 ~/.dcpam/images/，返回更新了路径的 ImagePair。"""
-        self.paths.ensure_dirs()
-        ts = pair.timestamp.strftime("%Y%m%d_%H%M%S")
+        """保存图像对到 ~/.dcpam/captures/{uid}/，返回更新了路径的 ImagePair。"""
+        capture_dir = self.paths.capture_dir(pair.uid)
+        capture_dir.mkdir(parents=True, exist_ok=True)
 
-        front_path = self.paths.images_dir / f"{ts}_front_{pair.uid}.png"
-        rear_path = self.paths.images_dir / f"{ts}_rear_{pair.uid}.png"
+        front_path = capture_dir / "front.png"
+        rear_path = capture_dir / "rear.png"
 
         cv2.imwrite(str(front_path), pair.front)
         cv2.imwrite(str(rear_path), pair.rear)
