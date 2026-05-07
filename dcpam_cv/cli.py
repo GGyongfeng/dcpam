@@ -24,7 +24,7 @@ def _ensure_aravis_libs() -> None:
         os.execv(sys.argv[0], sys.argv)
 
 
-def _capture_once(camera, pipeline: DCPAMPipeline, paths: DCPAMPaths) -> None:
+def _capture_once(camera, pipeline: DCPAMPipeline, paths: DCPAMPaths, capture_only: bool = False) -> None:
     """单次拍照 + 测量 + 保存结果。"""
     with step("1/6 拍照"):
         pair = camera.capture()
@@ -36,6 +36,9 @@ def _capture_once(camera, pipeline: DCPAMPipeline, paths: DCPAMPaths) -> None:
         f"        {capture_path}/front.png\n"
         f"        {capture_path}/rear.png",
     )
+
+    if capture_only:
+        return
 
     front_img = cv2.imread(str(pair.front_path), cv2.IMREAD_GRAYSCALE)
     rear_img = cv2.imread(str(pair.rear_path), cv2.IMREAD_GRAYSCALE)
@@ -57,7 +60,7 @@ def _capture_once(camera, pipeline: DCPAMPipeline, paths: DCPAMPaths) -> None:
         console.print(f"  [bold red]✗[/] 测量失败: {e}")
 
 
-def _interactive(camera, pipeline: DCPAMPipeline, paths: DCPAMPaths) -> None:
+def _interactive(camera, pipeline: DCPAMPipeline, paths: DCPAMPaths, capture_only: bool = False) -> None:
     """交互模式：ENTER 拍照，Q 退出。"""
     console.print("  Press [bold]ENTER[/] to capture, [bold]Q[/] to quit.\n")
 
@@ -67,7 +70,7 @@ def _interactive(camera, pipeline: DCPAMPipeline, paths: DCPAMPaths) -> None:
             break
         if user_input != "":
             continue
-        _capture_once(camera, pipeline, paths)
+        _capture_once(camera, pipeline, paths, capture_only)
         console.print()
 
 
@@ -77,6 +80,7 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description="DCPAM — Dual-Camera Point-to-Axis Measurement")
     parser.add_argument("-o", "--once", action="store_true", help="单次拍照后退出")
+    parser.add_argument("-c", "--capture-only", action="store_true", help="仅拍照，跳过测量")
     args = parser.parse_args()
 
     paths = DCPAMPaths()
@@ -90,8 +94,8 @@ def main() -> None:
 
     with DualCamera(paths=paths) as camera:
         if args.once:
-            _capture_once(camera, pipeline, paths)
+            _capture_once(camera, pipeline, paths, args.capture_only)
         else:
-            _interactive(camera, pipeline, paths)
+            _interactive(camera, pipeline, paths, args.capture_only)
 
     console.print("  [dim]Cameras closed. Bye.[/]")
