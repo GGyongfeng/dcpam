@@ -15,6 +15,10 @@
 
 DCPAM 项目的目标是**用激光基准线替代钢丝**，通过双相机系统重建激光轴线的三维空间位置，计算任意目标点到激光轴线的垂直距离，从而实现非接触式高精度轴线对中测量。
 
+核心算法脉络可参考 [`dcpam-core-algorithm.md`](dcpam-core-algorithm.md)；
+基于当前标定数据的坐标统一方案可参考
+[`calibrated-coordinate-unification.md`](calibrated-coordinate-unification.md)。
+
 ### 精度要求
 
 项目要求测量探头目标点到激光基准线的距离误差在 **±1.5 丝**（±15 μm）以内。
