@@ -53,7 +53,7 @@ class CameraIntrinsics(BaseModel):
 
 
 class GeometryConfig(BaseModel):
-    """镜面几何参数（mock 占位）。"""
+    """镜面几何参数（兼容旧 calibration.toml，已迁移至 device.toml）。"""
     zs: float = 5.0
     rotation_center: tuple[float, float, float] = (0.0, 0.0, 5.0)
     rotation_angle: float = 0.0
@@ -102,16 +102,9 @@ class SpotExtractionConfig(BaseModel):
     centroid_threshold: float = 0.3
 
 
-class ToolConfig(BaseModel):
-    """被测工具参数（mock 占位）。"""
-    mount_position: tuple[float, float, float] = (0.0, 0.0, 0.0)
-    bar_length: float = 200.0
-
-
 class PipelineConfig(BaseModel):
     """pipeline.toml 完整结构。"""
     spot_extraction: SpotExtractionConfig = SpotExtractionConfig()
-    tool: ToolConfig = ToolConfig()
 
 
 def load_pipeline_config(path: Path) -> PipelineConfig:
@@ -120,4 +113,40 @@ def load_pipeline_config(path: Path) -> PipelineConfig:
         raise FileNotFoundError(f"Pipeline 配置文件不存在: {path}")
     with open(path, "rb") as f:
         return PipelineConfig(**tomllib.load(f))
+
+
+# ---------------------------------------------------------------------------
+# Device config (device.toml)
+# ---------------------------------------------------------------------------
+
+class ScreenConfig(BaseModel):
+    """接收屏参数 (mm)。"""
+    zs: float
+
+
+class MirrorConfig(BaseModel):
+    """反射镜参数 (mm / rad)。"""
+    rotation_center: tuple[float, float, float]
+    rotation_angle: float
+
+
+class ToolConfig(BaseModel):
+    """被测工具参数 (mm)。"""
+    mount_position: tuple[float, float, float]
+    bar_length: float
+
+
+class DeviceConfig(BaseModel):
+    """device.toml 完整结构。"""
+    screen: ScreenConfig
+    mirror: MirrorConfig
+    tool: ToolConfig
+
+
+def load_device_config(path: Path) -> DeviceConfig:
+    """加载设备配置。"""
+    if not path.exists():
+        raise FileNotFoundError(f"设备配置文件不存在: {path}")
+    with open(path, "rb") as f:
+        return DeviceConfig(**tomllib.load(f))
 

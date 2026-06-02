@@ -222,12 +222,14 @@ class DualCamera:
                 break
             handle.stream.push_buffer(buf)
 
-        latest = handle.stream.timeout_pop_buffer(3_000_000)
-        if latest is None:
-            raise RuntimeError(f"{handle.name} 相机帧获取超时")
-
-        if latest.get_status() != arv.BufferStatus.SUCCESS:
+        for _ in range(5):
+            latest = handle.stream.timeout_pop_buffer(3_000_000)
+            if latest is None:
+                raise RuntimeError(f"{handle.name} 相机帧获取超时")
+            if latest.get_status() == arv.BufferStatus.SUCCESS:
+                break
             handle.stream.push_buffer(latest)
+        else:
             raise RuntimeError(f"{handle.name} 帧状态异常")
 
         data = latest.get_data()

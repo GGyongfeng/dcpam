@@ -16,6 +16,10 @@ class DCPAMPaths:
         return self.root / "pipeline.toml"
 
     @property
+    def device_file(self) -> Path:
+        return self.root / "device.toml"
+
+    @property
     def camera_file(self) -> Path:
         return self.root / "camera.toml"
 

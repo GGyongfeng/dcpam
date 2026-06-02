@@ -147,6 +147,7 @@ def run_checks(paths: DCPAMPaths) -> list[CheckResult]:
 
     results.append(_check_file("camera.toml", paths.camera_file))
     results.append(_check_file("calibration.toml", paths.calibration_file))
+    results.append(_check_file("device.toml", paths.device_file))
     results.append(_check_file("pipeline.toml", paths.pipeline_file))
 
     return results

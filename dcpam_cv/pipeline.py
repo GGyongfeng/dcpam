@@ -8,7 +8,7 @@ from typing import Generator
 import numpy as np
 from rich.console import Console
 
-from .config import load_calibration, load_pipeline_config
+from .config import load_calibration, load_device_config, load_pipeline_config
 from .path import DCPAMPaths
 from .steps import (
     back_project,
@@ -38,6 +38,7 @@ class DCPAMPipeline:
     def __init__(self, paths: DCPAMPaths) -> None:
         self.calib = load_calibration(paths.calibration_file)
         self.config = load_pipeline_config(paths.pipeline_file)
+        self.device = load_device_config(paths.device_file)
 
     def measure(
         self,
@@ -55,16 +56,16 @@ class DCPAMPipeline:
         )
 
         with step("3/6 反投影"):
-            front_3d = back_project(spots.front, self.calib.front_camera, self.calib.geometry)
-            rear_3d = back_project(spots.rear, self.calib.rear_camera, self.calib.geometry)
+            front_3d = back_project(spots.front, self.calib.front_camera, self.device.screen)
+            rear_3d = back_project(spots.rear, self.calib.rear_camera, self.device.screen)
         console.print(
             f"        front=({front_3d.x:.3f}, {front_3d.y:.3f}, {front_3d.z:.3f})"
             f"  rear=({rear_3d.x:.3f}, {rear_3d.y:.3f}, {rear_3d.z:.3f})",
         )
 
         with step("4/6 镜面变换"):
-            front_virtual = mirror_transform(front_3d, self.calib.geometry, scale=1.0)
-            rear_virtual = mirror_transform(rear_3d, self.calib.geometry, scale=2.0)
+            front_virtual = mirror_transform(front_3d, self.device.mirror, scale=1.0)
+            rear_virtual = mirror_transform(rear_3d, self.device.mirror, scale=2.0)
 
         with step("5/6 坐标变换"):
             rear_in_c1 = rear_to_front(rear_virtual, self.calib.transform)
@@ -84,6 +85,6 @@ class DCPAMPipeline:
         )
 
     def _target_point(self) -> Point3D:
-        """从 ToolConfig 计算被测目标点坐标（暂为 mock）。"""
-        mx, my, mz = self.config.tool.mount_position
-        return Point3D(x=mx, y=my, z=mz + self.config.tool.bar_length)
+        """从 DeviceConfig.tool 计算被测目标点坐标。"""
+        mx, my, mz = self.device.tool.mount_position
+        return Point3D(x=mx, y=my, z=mz + self.device.tool.bar_length)

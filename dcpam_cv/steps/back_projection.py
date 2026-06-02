@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..config import CameraIntrinsics, GeometryConfig
+from ..config import CameraIntrinsics, ScreenConfig
 from ..types import Point2D, Point3D
 
 
 def back_project(
     pixel: Point2D,
     intrinsics: CameraIntrinsics,
-    geometry: GeometryConfig,
+    screen: ScreenConfig,
 ) -> Point3D:
     """像素坐标 → 相机坐标系下的三维点 (SIMPLE_RADIAL 去畸变 + Zs 缩放)。"""
     K_inv = np.linalg.inv(intrinsics.k_matrix())
@@ -17,7 +17,7 @@ def back_project(
     p_norm = K_inv @ p_homo
 
     p_undist = _undistort_simple_radial(p_norm[:2], intrinsics.distortion)
-    point_3d = geometry.zs * np.array([p_undist[0], p_undist[1], 1.0])
+    point_3d = screen.zs * np.array([p_undist[0], p_undist[1], 1.0])
     return Point3D.from_array(point_3d)
 
 
