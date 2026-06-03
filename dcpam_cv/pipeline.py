@@ -56,16 +56,16 @@ class DCPAMPipeline:
         )
 
         with step("3/6 反投影"):
-            front_3d = back_project(spots.front, self.calib.front_camera, self.device.screen)
-            rear_3d = back_project(spots.rear, self.calib.rear_camera, self.device.screen)
+            front_3d = back_project(spots.front, self.calib.front_camera, self.calib.planes.front_image_real)
+            rear_3d = back_project(spots.rear, self.calib.rear_camera, self.calib.planes.rear_image_real)
         console.print(
             f"        front=({front_3d.x:.3f}, {front_3d.y:.3f}, {front_3d.z:.3f})"
             f"  rear=({rear_3d.x:.3f}, {rear_3d.y:.3f}, {rear_3d.z:.3f})",
         )
 
         with step("4/6 镜面变换"):
-            front_virtual = mirror_transform(front_3d, self.device.mirror, scale=1.0)
-            rear_virtual = mirror_transform(rear_3d, self.device.mirror, scale=2.0)
+            front_virtual = mirror_transform(front_3d, self.calib.planes.front_reflection)
+            rear_virtual = mirror_transform(rear_3d, self.calib.planes.rear_reflection)
 
         with step("5/6 坐标变换"):
             rear_in_c1 = rear_to_front(rear_virtual, self.calib.transform)

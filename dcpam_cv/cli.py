@@ -8,6 +8,7 @@ from datetime import datetime
 
 import cv2
 
+from .defaults import DefaultConfigInitializer
 from .path import DCPAMPaths
 from .pipeline import DCPAMPipeline, console, step
 from .startup import startup
@@ -118,6 +119,7 @@ def main() -> None:
 
     paths = DCPAMPaths()
     paths.ensure_dirs()
+    DefaultConfigInitializer(paths).create_missing()
 
     if args.mock:
         pipeline = DCPAMPipeline(paths)

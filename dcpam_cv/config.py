@@ -37,26 +37,20 @@ def load_camera_config(path: Path) -> CameraConfig:
 # ---------------------------------------------------------------------------
 
 class CameraIntrinsics(BaseModel):
-    """SIMPLE_RADIAL 相机内参。"""
-    focal_length: float
+    """相机内参。"""
+    model: str = "OPENCV"
+    focal_lengths: tuple[float, float]
     principal_point: tuple[float, float]
-    distortion: float
+    distortion_coeffs: tuple[float, float, float, float]
     resolution: tuple[int, int]
 
     def k_matrix(self) -> np.ndarray:
         """3x3 内参矩阵。"""
-        f = self.focal_length
+        fx, fy = self.focal_lengths
         cx, cy = self.principal_point
-        return np.array([[f, 0, cx], [0, f, cy], [0, 0, 1]], dtype=np.float64)
+        return np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]], dtype=np.float64)
 
     model_config = {"arbitrary_types_allowed": True}
-
-
-class GeometryConfig(BaseModel):
-    """镜面几何参数（兼容旧 calibration.toml，已迁移至 device.toml）。"""
-    zs: float = 5.0
-    rotation_center: tuple[float, float, float] = (0.0, 0.0, 5.0)
-    rotation_angle: float = 0.0
 
 
 class TransformConfig(BaseModel):
@@ -74,12 +68,27 @@ class TransformConfig(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
 
+class PlaneConfig(BaseModel):
+    """相机坐标系下的平面表示。"""
+    point: tuple[float, float, float]
+    normal: tuple[float, float, float]
+    d: float
+
+
+class PlaneCalibrationConfig(BaseModel):
+    """四个光学平面的标定结果。"""
+    front_image_real: PlaneConfig
+    rear_image_real: PlaneConfig
+    front_reflection: PlaneConfig
+    rear_reflection: PlaneConfig
+
+
 class CalibrationConfig(BaseModel):
     """calibration.toml 完整结构。"""
     front_camera: CameraIntrinsics
     rear_camera: CameraIntrinsics
-    geometry: GeometryConfig = GeometryConfig()
     transform: TransformConfig
+    planes: PlaneCalibrationConfig
 
 
 def load_calibration(path: Path) -> CalibrationConfig:
@@ -119,17 +128,6 @@ def load_pipeline_config(path: Path) -> PipelineConfig:
 # Device config (device.toml)
 # ---------------------------------------------------------------------------
 
-class ScreenConfig(BaseModel):
-    """接收屏参数 (mm)。"""
-    zs: float
-
-
-class MirrorConfig(BaseModel):
-    """反射镜参数 (mm / rad)。"""
-    rotation_center: tuple[float, float, float]
-    rotation_angle: float
-
-
 class ToolConfig(BaseModel):
     """被测工具参数 (mm)。"""
     mount_position: tuple[float, float, float]
@@ -138,8 +136,6 @@ class ToolConfig(BaseModel):
 
 class DeviceConfig(BaseModel):
     """device.toml 完整结构。"""
-    screen: ScreenConfig
-    mirror: MirrorConfig
     tool: ToolConfig
 
 
@@ -149,4 +145,3 @@ def load_device_config(path: Path) -> DeviceConfig:
         raise FileNotFoundError(f"设备配置文件不存在: {path}")
     with open(path, "rb") as f:
         return DeviceConfig(**tomllib.load(f))
-

@@ -13,14 +13,14 @@
 4. 提高 yf, zf, yb, zb 的测量精度
 """
 
-import numpy as np
 import os
 
-from rich.console import Console, Group
-from rich.table import Table
-from rich.panel import Panel
-from rich.text import Text
+import numpy as np
 from rich import box
+from rich.console import Console, Group
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
 
 from dcpam_cv.precision import PrecisionAnalyzer
 

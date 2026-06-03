@@ -100,29 +100,47 @@ class DCPAMPaths:
 
 ```toml
 [front_camera]
-focal_length = 2918.30
+model = "OPENCV"
+focal_lengths = [2957.8241766856004, 2942.0409977296185]
 principal_point = [1296.0, 972.0]
-distortion = -0.2137
+distortion_coeffs = [-0.22671473034572842, 0.09224214298554129, -0.004102850618949305, -0.0009831445506355439]
 resolution = [2592, 1944]
 
 [rear_camera]
-focal_length = 3757.72
+model = "OPENCV"
+focal_lengths = [3061.8876511556277, 3057.0360889301282]
 principal_point = [1296.0, 972.0]
-distortion = -0.2384
+distortion_coeffs = [-0.24188566048129059, 0.10469978497759738, 0.0002845737129601245, 0.00018629382738589062]
 resolution = [2592, 1944]
 
-[geometry]
-zs = 5.0
-rotation_center = [0.0, 0.0, 5.0]
-rotation_angle = 0.0
-
 [transform]
-t_c2_to_c1 = [
-    [1.0, 0.0, 0.0, 0.0],
-    [0.0, 1.0, 0.0, 0.0],
-    [0.0, 0.0, 1.0, 0.0],
-    [0.0, 0.0, 0.0, 1.0],
+r_rear_from_front = [
+    [0.99981958, -0.01442669, -0.01235624],
+    [0.01451016, 0.99987232, 0.00669294],
+    [0.01225810, -0.00687103, 0.99990126],
 ]
+t_rear_from_front = [-7.86547923, 0.15503238, 0.70268141]
+baseline_norm = 7.89832639
+
+[planes.front_image_real]
+point = [0.89568958305, 11.6958981485, 5.23343140273]
+normal = [0.00492360142167, -0.0832961234852, 0.996512676267]
+d = -4.24536777526
+
+[planes.rear_image_real]
+point = [8.40410009288, 11.0517674219, 4.08626158655]
+normal = [0.014021645213, 0.0867422307864, 0.996132109142]
+d = -5.14695064286
+
+[planes.front_reflection]
+point = [-47.8575602765, -8.18769513583, 15.0908206393]
+normal = [0.433725569982, 0.0533280620017, 0.899465534496]
+d = 7.62000847045
+
+[planes.rear_reflection]
+point = [-41.314707067, -2.88091562171, 11.0941717449]
+normal = [0.445325119069, 0.2168568307, 0.868710914692]
+d = 9.38559499095
 ```
 
 #### `~/.dcpam/pipeline.toml`
@@ -174,35 +192,42 @@ from pydantic import BaseModel
 # ---------- 标定 ----------
 
 class CameraIntrinsics(BaseModel):
-    focal_length: float
+    model: str = "OPENCV"
+    focal_lengths: tuple[float, float]
     principal_point: tuple[float, float]
-    distortion: float
+    distortion_coeffs: tuple[float, float, float, float]
     resolution: tuple[int, int]
 
     def to_matrix(self) -> np.ndarray:
-        f = self.focal_length
+        fx, fy = self.focal_lengths
         cx, cy = self.principal_point
-        return np.array([[f, 0, cx], [0, f, cy], [0, 0, 1]])
-
-
-class GeometryConfig(BaseModel):
-    zs: float
-    rotation_center: tuple[float, float, float]
-    rotation_angle: float
+        return np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])
 
 
 class TransformConfig(BaseModel):
-    t_c2_to_c1: list[list[float]]
+    r_rear_from_front: list[list[float]]
+    t_rear_from_front: list[float]
+    baseline_norm: float
 
-    def to_matrix(self) -> np.ndarray:
-        return np.array(self.t_c2_to_c1)
+
+class PlaneConfig(BaseModel):
+    point: tuple[float, float, float]
+    normal: tuple[float, float, float]
+    d: float
+
+
+class PlaneCalibrationConfig(BaseModel):
+    front_image_real: PlaneConfig
+    rear_image_real: PlaneConfig
+    front_reflection: PlaneConfig
+    rear_reflection: PlaneConfig
 
 
 class CalibrationConfig(BaseModel):
     front_camera: CameraIntrinsics
     rear_camera: CameraIntrinsics
-    geometry: GeometryConfig
     transform: TransformConfig
+    planes: PlaneCalibrationConfig
 
 
 # ---------- Pipeline ----------
@@ -582,8 +607,8 @@ def main() -> None:
 │  DCPAMPipeline     │               │
 │                    │    ImagePair.front ──┐
 │  .measure(         │    ImagePair.rear  ──┤
-│    front_image,    │◄────────────────────┘
-│    rear_image      │
+│    front_image,         │◄────────────────────┘
+│    rear_image           │
 │  ) → MeasurementResult
 │                    │
 │  内部 5 步:         │

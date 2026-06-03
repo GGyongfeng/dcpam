@@ -1,0 +1,978 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DCPAM 3D Viewer</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --bg: #eef1f5;
+      --panel: #ffffff;
+      --text: #151922;
+      --muted: #697384;
+      --line: #d9dee8;
+      --accent: #1768d8;
+      --green: #00a88f;
+      --orange: #f08a24;
+      --blue: #5f8ee4;
+      --purple: #af65c6;
+      --cyan: #38b6d8;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    button,
+    input,
+    select {
+      font: inherit;
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: 380px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      border-right: 1px solid var(--line);
+      background: var(--panel);
+      padding: 18px;
+      overflow: auto;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 21px;
+      letter-spacing: 0;
+    }
+
+    .brand p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .section {
+      border-top: 1px solid var(--line);
+      padding-top: 14px;
+    }
+
+    .section h2 {
+      margin: 0 0 10px;
+      font-size: 14px;
+    }
+
+    .file-row {
+      display: grid;
+      gap: 8px;
+    }
+
+    .file-input {
+      display: grid;
+      gap: 6px;
+      border: 1px dashed #c8cfda;
+      border-radius: 8px;
+      padding: 10px;
+      background: #fafbfc;
+    }
+
+    .file-input span {
+      color: var(--muted);
+      font-size: 12px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    input[type="file"],
+    select {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      padding: 8px 9px;
+    }
+
+    .checks {
+      display: grid;
+      gap: 7px;
+    }
+
+    .check {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+    }
+
+    .button-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    button {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #f8fafc;
+      color: var(--text);
+      padding: 8px 10px;
+      cursor: pointer;
+    }
+
+    button.primary {
+      border-color: var(--accent);
+      background: var(--accent);
+      color: white;
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .stat {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfe;
+      padding: 10px;
+    }
+
+    .stat strong {
+      display: block;
+      font-size: 20px;
+    }
+
+    .stat span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .table-wrap {
+      max-height: 330px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    th,
+    td {
+      border-bottom: 1px solid var(--line);
+      padding: 7px;
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      background: #f4f6f9;
+      z-index: 1;
+    }
+
+    .viewer {
+      position: relative;
+      min-width: 0;
+      min-height: 100vh;
+      background: #e8edf4;
+    }
+
+    .viewer canvas {
+      display: block;
+      outline: none;
+    }
+
+    .hud {
+      position: absolute;
+      left: 18px;
+      bottom: 18px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      max-width: calc(100% - 36px);
+      border: 1px solid rgba(217, 222, 232, 0.9);
+      border-radius: 9px;
+      background: rgba(255, 255, 255, 0.9);
+      padding: 10px 12px;
+      font-size: 13px;
+      backdrop-filter: blur(8px);
+    }
+
+    .chip::before {
+      content: "";
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      margin-right: 6px;
+      border-radius: 50%;
+      background: var(--chip);
+    }
+
+    .corner-help {
+      position: absolute;
+      top: 18px;
+      right: 18px;
+      max-width: 310px;
+      border: 1px solid rgba(217, 222, 232, 0.9);
+      border-radius: 9px;
+      background: rgba(255, 255, 255, 0.9);
+      padding: 10px 12px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+      backdrop-filter: blur(8px);
+    }
+
+    .empty {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      pointer-events: none;
+      font-size: 15px;
+    }
+
+    @media (max-width: 960px) {
+      .app {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        max-height: 48vh;
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .viewer {
+        min-height: 52vh;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="module">
+    import React, { useEffect, useMemo, useRef, useState } from "https://esm.sh/react@18.2.0";
+    import { createRoot } from "https://esm.sh/react-dom@18.2.0/client";
+    import * as THREE from "https://esm.sh/three@0.160.0";
+    import { OrbitControls } from "https://esm.sh/three@0.160.0/examples/jsm/controls/OrbitControls.js";
+
+    const STORAGE_KEYS = {
+      csv: "dcpam.viewer.csvText",
+      toml: "dcpam.viewer.tomlText",
+      csvName: "dcpam.viewer.csvName",
+      tomlName: "dcpam.viewer.tomlName",
+    };
+
+    const COLORS = {
+      frontVirtual: 0x00a88f,
+      rearVirtual: 0xf08a24,
+      real: 0x5f6f86,
+      imagePlane: 0x5f8ee4,
+      reflectionPlane: 0xaf65c6,
+      virtualPlane: 0x38b874,
+      cameraFront: 0x0b7a75,
+      cameraRear: 0xd06b00,
+    };
+
+    function App() {
+      const [csvText, setCsvText] = useStoredText(STORAGE_KEYS.csv);
+      const [tomlText, setTomlText] = useStoredText(STORAGE_KEYS.toml);
+      const [csvName, setCsvName] = useStoredText(STORAGE_KEYS.csvName);
+      const [tomlName, setTomlName] = useStoredText(STORAGE_KEYS.tomlName);
+      const [selected, setSelected] = useState(new Set());
+      const [version, setVersion] = useState("V2");
+      const [layers, setLayers] = useState({
+        frontVirtual: true,
+        rearVirtual: true,
+        realPoints: false,
+        laserLines: true,
+        axes: true,
+        cameras: true,
+        imagePlanes: true,
+        reflectionPlanes: true,
+        virtualPlanes: true,
+        labels: true,
+      });
+
+      const rows = useMemo(() => parseCsv(csvText).map(normalizeRow).filter((row) => row.name), [csvText]);
+      const geometry = useMemo(() => tomlText ? buildGeometry(parseToml(tomlText)) : null, [tomlText]);
+      const versions = useMemo(() => [...new Set(rows.map((row) => sampleVersion(row.name)).filter(Boolean))].sort(), [rows]);
+      const filteredRows = useMemo(
+        () => version === "all" ? rows : rows.filter((row) => sampleVersion(row.name) === version),
+        [rows, version],
+      );
+      const selectedRows = useMemo(
+        () => filteredRows.filter((row) => selected.has(row.name)),
+        [filteredRows, selected],
+      );
+
+      useEffect(() => {
+        if (!rows.length) {
+          setSelected(new Set());
+          return;
+        }
+        const nextVersion = versions.includes("V2") ? "V2" : versions[0] || "all";
+        setVersion(nextVersion);
+        setSelected(new Set(rows.filter((row) => sampleVersion(row.name) === nextVersion).map((row) => row.name)));
+      }, [csvText]);
+
+      const onFile = async (event, setter, nameSetter) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        setter(await file.text());
+        nameSetter(file.name);
+      };
+
+      const setLayer = (key, value) => setLayers((current) => ({ ...current, [key]: value }));
+
+      return (
+        React.createElement("main", { className: "app" },
+          React.createElement("aside", { className: "sidebar" },
+            React.createElement("div", { className: "brand" },
+              React.createElement("h1", null, "DCPAM 3D Viewer"),
+              React.createElement("p", null, "上传测量 CSV 和 calibration.toml。文件内容会保存在 Local Storage，下次打开自动恢复。"),
+            ),
+            React.createElement(FileSection, {
+              csvName,
+              tomlName,
+              onCsv: (event) => onFile(event, setCsvText, setCsvName),
+              onToml: (event) => onFile(event, setTomlText, setTomlName),
+            }),
+            React.createElement("section", { className: "section" },
+              React.createElement("h2", null, "显示图层"),
+              React.createElement("div", { className: "checks" },
+                React.createElement(Check, { label: "XYZ 坐标轴", checked: layers.axes, onChange: (v) => setLayer("axes", v) }),
+                React.createElement(Check, { label: "相机位置", checked: layers.cameras, onChange: (v) => setLayer("cameras", v) }),
+                React.createElement(Check, { label: "实像面", checked: layers.imagePlanes, onChange: (v) => setLayer("imagePlanes", v) }),
+                React.createElement(Check, { label: "反射面", checked: layers.reflectionPlanes, onChange: (v) => setLayer("reflectionPlanes", v) }),
+                React.createElement(Check, { label: "虚像面", checked: layers.virtualPlanes, onChange: (v) => setLayer("virtualPlanes", v) }),
+                React.createElement(Check, { label: "前虚像点", checked: layers.frontVirtual, onChange: (v) => setLayer("frontVirtual", v) }),
+                React.createElement(Check, { label: "后虚像点", checked: layers.rearVirtual, onChange: (v) => setLayer("rearVirtual", v) }),
+                React.createElement(Check, { label: "实像点", checked: layers.realPoints, onChange: (v) => setLayer("realPoints", v) }),
+                React.createElement(Check, { label: "激光点连线", checked: layers.laserLines, onChange: (v) => setLayer("laserLines", v) }),
+                React.createElement(Check, { label: "标签", checked: layers.labels, onChange: (v) => setLayer("labels", v) }),
+              ),
+            ),
+            React.createElement("section", { className: "section" },
+              React.createElement("h2", null, "样本选择"),
+              React.createElement("select", { value: version, onChange: (event) => setVersion(event.target.value) },
+                React.createElement("option", { value: "all" }, "全部版本"),
+                versions.map((item) => React.createElement("option", { key: item, value: item }, item)),
+              ),
+              React.createElement("div", { className: "button-grid", style: { marginTop: 8 } },
+                React.createElement("button", {
+                  type: "button",
+                  onClick: () => setSelected(new Set(filteredRows.map((row) => row.name))),
+                }, "全选当前"),
+                React.createElement("button", { type: "button", onClick: () => setSelected(new Set()) }, "清空"),
+                React.createElement("button", {
+                  type: "button",
+                  className: "primary",
+                  onClick: () => setSelected(new Set(rows.filter((row) => sampleVersion(row.name) === "V2").map((row) => row.name))),
+                  disabled: !versions.includes("V2"),
+                }, "只选 V2"),
+                React.createElement("button", {
+                  type: "button",
+                  onClick: () => {
+                    setCsvText("");
+                    setTomlText("");
+                    setCsvName("");
+                    setTomlName("");
+                    setSelected(new Set());
+                  },
+                }, "清除缓存"),
+              ),
+            ),
+            React.createElement("section", { className: "section" },
+              React.createElement("h2", null, "统计"),
+              React.createElement("div", { className: "stats" },
+                React.createElement(Stat, { value: rows.length, label: "CSV 行" }),
+                React.createElement(Stat, { value: selectedRows.length, label: "已选择" }),
+                React.createElement(Stat, { value: geometry?.planes.length || 0, label: "平面" }),
+                React.createElement(Stat, { value: geometry?.cameras.length || 0, label: "相机" }),
+              ),
+            ),
+            React.createElement("section", { className: "section" },
+              React.createElement("h2", null, "样本"),
+              React.createElement(SampleTable, { rows: filteredRows, selected, setSelected }),
+            ),
+          ),
+          React.createElement("section", { className: "viewer" },
+            React.createElement(SceneView, { rows: selectedRows, geometry, layers }),
+            !rows.length && !geometry && React.createElement("div", { className: "empty" }, "上传 CSV 和 calibration.toml 后显示 3D 场景"),
+            React.createElement("div", { className: "corner-help" },
+              "CAD 视角操作：左键旋转，滚轮缩放，右键平移。点击图层开关可以单独查看实像面、反射面、虚像面和相机位。",
+            ),
+            React.createElement("div", { className: "hud" },
+              React.createElement(LegendChip, { color: "var(--green)", label: "前虚像点" }),
+              React.createElement(LegendChip, { color: "var(--orange)", label: "后虚像点" }),
+              React.createElement(LegendChip, { color: "var(--blue)", label: "实像面" }),
+              React.createElement(LegendChip, { color: "var(--purple)", label: "反射面" }),
+              React.createElement(LegendChip, { color: "var(--cyan)", label: "虚像面" }),
+            ),
+          ),
+        )
+      );
+    }
+
+    function FileSection({ csvName, tomlName, onCsv, onToml }) {
+      return React.createElement("section", { className: "section" },
+        React.createElement("h2", null, "文件"),
+        React.createElement("div", { className: "file-row" },
+          React.createElement("label", { className: "file-input" },
+            "测量 CSV",
+            React.createElement("input", { type: "file", accept: ".csv,text/csv", onChange: onCsv }),
+            React.createElement("span", null, csvName || "未上传"),
+          ),
+          React.createElement("label", { className: "file-input" },
+            "标定 TOML",
+            React.createElement("input", { type: "file", accept: ".toml,text/plain", onChange: onToml }),
+            React.createElement("span", null, tomlName || "未上传"),
+          ),
+        ),
+      );
+    }
+
+    function Check({ label, checked, onChange }) {
+      return React.createElement("label", { className: "check" },
+        React.createElement("input", { type: "checkbox", checked, onChange: (event) => onChange(event.target.checked) }),
+        label,
+      );
+    }
+
+    function Stat({ value, label }) {
+      return React.createElement("div", { className: "stat" },
+        React.createElement("strong", null, value),
+        React.createElement("span", null, label),
+      );
+    }
+
+    function LegendChip({ color, label }) {
+      return React.createElement("span", { className: "chip", style: { "--chip": color } }, label);
+    }
+
+    function SampleTable({ rows, selected, setSelected }) {
+      return React.createElement("div", { className: "table-wrap" },
+        React.createElement("table", null,
+          React.createElement("thead", null,
+            React.createElement("tr", null,
+              React.createElement("th", null, "选"),
+              React.createElement("th", null, "name"),
+              React.createElement("th", null, "front_u"),
+              React.createElement("th", null, "rear_u"),
+            ),
+          ),
+          React.createElement("tbody", null,
+            rows.map((row) => React.createElement("tr", { key: row.name },
+              React.createElement("td", null,
+                React.createElement("input", {
+                  type: "checkbox",
+                  checked: selected.has(row.name),
+                  onChange: (event) => {
+                    const next = new Set(selected);
+                    if (event.target.checked) next.add(row.name);
+                    else next.delete(row.name);
+                    setSelected(next);
+                  },
+                }),
+              ),
+              React.createElement("td", null, row.name),
+              React.createElement("td", null, format(row.front_u)),
+              React.createElement("td", null, format(row.rear_u)),
+            )),
+          ),
+        ),
+      );
+    }
+
+    function SceneView({ rows, geometry, layers }) {
+      const mountRef = useRef(null);
+      const sceneRef = useRef(null);
+
+      useEffect(() => {
+        const mount = mountRef.current;
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xe8edf4);
+
+        const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 2000);
+        camera.position.set(45, -55, 42);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setPixelRatio(window.devicePixelRatio || 1);
+        mount.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.08;
+        controls.rotateSpeed = 0.72;
+        controls.zoomSpeed = 0.9;
+        controls.panSpeed = 0.8;
+        controls.mouseButtons = {
+          LEFT: THREE.MOUSE.ROTATE,
+          MIDDLE: THREE.MOUSE.DOLLY,
+          RIGHT: THREE.MOUSE.PAN,
+        };
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.85));
+        const light = new THREE.DirectionalLight(0xffffff, 0.6);
+        light.position.set(30, -45, 60);
+        scene.add(light);
+
+        const root = new THREE.Group();
+        scene.add(root);
+        sceneRef.current = { scene, root, camera, renderer, controls, mount };
+
+        const resize = () => {
+          const rect = mount.getBoundingClientRect();
+          renderer.setSize(rect.width, rect.height);
+          camera.aspect = rect.width / Math.max(rect.height, 1);
+          camera.updateProjectionMatrix();
+        };
+        resize();
+        window.addEventListener("resize", resize);
+
+        let active = true;
+        const animate = () => {
+          if (!active) return;
+          controls.update();
+          renderer.render(scene, camera);
+          requestAnimationFrame(animate);
+        };
+        animate();
+
+        return () => {
+          active = false;
+          window.removeEventListener("resize", resize);
+          renderer.dispose();
+          mount.removeChild(renderer.domElement);
+        };
+      }, []);
+
+      useEffect(() => {
+        const context = sceneRef.current;
+        if (!context) return;
+        clearGroup(context.root);
+        buildScene(context.root, rows, geometry, layers);
+        fitCamera(context.camera, context.controls, rows, geometry);
+      }, [rows, geometry, layers]);
+
+      return React.createElement("div", { ref: mountRef, style: { width: "100%", height: "100vh" } });
+    }
+
+    function buildScene(root, rows, geometry, layers) {
+      if (layers.axes) root.add(new THREE.AxesHelper(30));
+      root.add(new THREE.GridHelper(80, 16, 0xb8c1ce, 0xd7dde7));
+
+      if (geometry) {
+        geometry.planes.forEach((plane) => {
+          if (plane.kind === "image" && !layers.imagePlanes) return;
+          if (plane.kind === "reflection" && !layers.reflectionPlanes) return;
+          if (plane.kind === "virtual" && !layers.virtualPlanes) return;
+          root.add(planeMesh(plane));
+          if (layers.labels) root.add(labelSprite(plane.label, plane.point, planeColor(plane.kind)));
+        });
+        if (layers.cameras) {
+          geometry.cameras.forEach((camera) => {
+            root.add(cameraMesh(camera));
+            if (layers.labels) root.add(labelSprite(camera.name, camera.position, camera.color));
+          });
+        }
+      }
+
+      rows.forEach((row) => {
+        const frontVirtual = pointFromRow(row, "front_virtual", "cf");
+        const rearVirtual = pointFromRow(row, "rear_virtual", "cf");
+        if (layers.frontVirtual && frontVirtual) root.add(pointMesh(frontVirtual, COLORS.frontVirtual, 0.35));
+        if (layers.rearVirtual && rearVirtual) root.add(pointMesh(rearVirtual, COLORS.rearVirtual, 0.35));
+        if (layers.realPoints) {
+          const frontReal = pointFromRow(row, "front_real", "cf");
+          const rearReal = pointFromRow(row, "rear_real", "cr");
+          if (frontReal) root.add(pointMesh(frontReal, COLORS.real, 0.24));
+          if (rearReal) root.add(pointMesh(rearReal, 0x8a96a8, 0.24));
+        }
+        if (layers.laserLines && frontVirtual && rearVirtual) root.add(lineMesh(frontVirtual, rearVirtual, 0x8995a8));
+      });
+    }
+
+    function planeMesh(plane) {
+      const geometry = new THREE.BufferGeometry().setFromPoints(plane.corners.map(toVector3));
+      geometry.setIndex([0, 1, 2, 0, 2, 3]);
+      geometry.computeVertexNormals();
+      const material = new THREE.MeshBasicMaterial({
+        color: planeColor(plane.kind),
+        transparent: true,
+        opacity: plane.kind === "reflection" ? 0.22 : 0.18,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      });
+      const mesh = new THREE.Mesh(geometry, material);
+      const edges = new THREE.LineSegments(
+        new THREE.EdgesGeometry(geometry),
+        new THREE.LineBasicMaterial({ color: planeColor(plane.kind), transparent: true, opacity: 0.95 }),
+      );
+      const group = new THREE.Group();
+      group.add(mesh);
+      group.add(edges);
+      return group;
+    }
+
+    function cameraMesh(camera) {
+      const group = new THREE.Group();
+      const body = new THREE.Mesh(
+        new THREE.BoxGeometry(1.2, 0.7, 0.7),
+        new THREE.MeshStandardMaterial({ color: camera.color, roughness: 0.45 }),
+      );
+      const nose = new THREE.Mesh(
+        new THREE.ConeGeometry(0.32, 0.75, 24),
+        new THREE.MeshStandardMaterial({ color: camera.color, roughness: 0.45 }),
+      );
+      nose.rotation.x = Math.PI / 2;
+      nose.position.z = 0.7;
+      group.add(body);
+      group.add(nose);
+      group.position.copy(toVector3(camera.position));
+      return group;
+    }
+
+    function pointMesh(point, color, radius) {
+      return new THREE.Mesh(
+        new THREE.SphereGeometry(radius, 24, 16),
+        new THREE.MeshStandardMaterial({ color, roughness: 0.35 }),
+      ).translateX(point.x).translateY(point.y).translateZ(point.z);
+    }
+
+    function lineMesh(first, second, color) {
+      return new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([toVector3(first), toVector3(second)]),
+        new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.75 }),
+      );
+    }
+
+    function labelSprite(text, point, color) {
+      const canvas = document.createElement("canvas");
+      const context = canvas.getContext("2d");
+      canvas.width = 256;
+      canvas.height = 64;
+      context.font = "28px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
+      context.fillStyle = "rgba(255,255,255,0.86)";
+      context.fillRect(0, 0, 256, 64);
+      context.fillStyle = `#${color.toString(16).padStart(6, "0")}`;
+      context.fillText(text, 12, 40);
+      const texture = new THREE.CanvasTexture(canvas);
+      const material = new THREE.SpriteMaterial({ map: texture, transparent: true });
+      const sprite = new THREE.Sprite(material);
+      sprite.position.copy(toVector3(point));
+      sprite.position.y += 1.5;
+      sprite.scale.set(8, 2, 1);
+      return sprite;
+    }
+
+    function fitCamera(camera, controls, rows, geometry) {
+      const points = [];
+      rows.forEach((row) => {
+        ["front_virtual", "rear_virtual"].forEach((prefix) => {
+          const point = pointFromRow(row, prefix, "cf");
+          if (point) points.push(point);
+        });
+      });
+      if (geometry) {
+        geometry.planes.forEach((plane) => points.push(...plane.corners));
+        geometry.cameras.forEach((camera) => points.push(camera.position));
+      }
+      if (!points.length) return;
+      const box = new THREE.Box3().setFromPoints(points.map(toVector3));
+      const center = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3()).length();
+      controls.target.copy(center);
+      camera.position.copy(center.clone().add(new THREE.Vector3(size * 0.7, -size * 0.9, size * 0.65)));
+      camera.near = Math.max(0.01, size / 1000);
+      camera.far = Math.max(1000, size * 20);
+      camera.updateProjectionMatrix();
+      controls.update();
+    }
+
+    function clearGroup(group) {
+      while (group.children.length) {
+        const child = group.children.pop();
+        child.traverse?.((object) => {
+          object.geometry?.dispose?.();
+          object.material?.dispose?.();
+        });
+      }
+    }
+
+    function parseCsv(text) {
+      if (!text) return [];
+      const rows = [];
+      let row = [];
+      let cell = "";
+      let quoted = false;
+      for (let index = 0; index < text.length; index += 1) {
+        const char = text[index];
+        const next = text[index + 1];
+        if (char === "\"" && quoted && next === "\"") {
+          cell += "\"";
+          index += 1;
+        } else if (char === "\"") {
+          quoted = !quoted;
+        } else if (char === "," && !quoted) {
+          row.push(cell);
+          cell = "";
+        } else if ((char === "\n" || char === "\r") && !quoted) {
+          if (char === "\r" && next === "\n") index += 1;
+          row.push(cell);
+          if (row.some((value) => value !== "")) rows.push(row);
+          row = [];
+          cell = "";
+        } else {
+          cell += char;
+        }
+      }
+      row.push(cell);
+      if (row.some((value) => value !== "")) rows.push(row);
+      const header = rows.shift() || [];
+      return rows.map((values) => Object.fromEntries(header.map((key, index) => [key, values[index] ?? ""])));
+    }
+
+    function normalizeRow(row) {
+      if (row.name) return row;
+      const version = (row.dataset_version || "v1").toUpperCase();
+      const pair = String(row.pair_index || "0").padStart(2, "0");
+      return { ...row, name: `L109D${row.position_cm}-${version}-${pair}` };
+    }
+
+    function parseToml(text) {
+      const data = {};
+      let section = data;
+      const lines = text.split(/\r?\n/);
+      for (let index = 0; index < lines.length; index += 1) {
+        let line = lines[index].replace(/#.*/, "").trim();
+        if (!line) continue;
+        const sectionMatch = line.match(/^\[(.+)]$/);
+        if (sectionMatch) {
+          section = ensurePath(data, sectionMatch[1].split("."));
+          continue;
+        }
+        const assign = line.match(/^([A-Za-z0-9_]+)\s*=\s*(.+)$/);
+        if (!assign) continue;
+        let value = assign[2].trim();
+        while (value.includes("[") && !balancedBrackets(value) && index + 1 < lines.length) {
+          index += 1;
+          value += lines[index].replace(/#.*/, "").trim();
+        }
+        section[assign[1]] = parseTomlValue(value);
+      }
+      return data;
+    }
+
+    function buildGeometry(config) {
+      const transform = config.transform || {};
+      const rotation = transform.r_rear_from_front || identity3();
+      const translation = transform.t_rear_from_front || [0, 0, 0];
+      const rearToFront = (point) => matrixVectorMul(transpose3(rotation), subtract(point, translation));
+      const rearNormalToFront = (normal) => matrixVectorMul(transpose3(rotation), normal);
+
+      const raw = config.planes || {};
+      const planes = [];
+      if (raw.front_image_real) planes.push(makePlane("front image", "image", raw.front_image_real));
+      if (raw.front_reflection) planes.push(makePlane("front reflection", "reflection", raw.front_reflection));
+      if (raw.rear_image_real) planes.push(makePlane("rear image", "image", transformPlane(raw.rear_image_real, rearToFront, rearNormalToFront)));
+      if (raw.rear_reflection) planes.push(makePlane("rear reflection", "reflection", transformPlane(raw.rear_reflection, rearToFront, rearNormalToFront)));
+      if (raw.front_image_real && raw.front_reflection) {
+        planes.push(makePlane("front virtual image", "virtual", mirrorPlane(raw.front_image_real, raw.front_reflection)));
+      }
+      if (raw.rear_image_real && raw.rear_reflection) {
+        const rearVirtual = mirrorPlane(raw.rear_image_real, raw.rear_reflection);
+        planes.push(makePlane("rear virtual image", "virtual", transformPlane(rearVirtual, rearToFront, rearNormalToFront)));
+      }
+
+      return {
+        planes,
+        cameras: [
+          { name: "C1", position: { x: 0, y: 0, z: 0 }, color: COLORS.cameraFront },
+          { name: "C2", position: toPoint(rearToFront([0, 0, 0])), color: COLORS.cameraRear },
+        ],
+      };
+    }
+
+    function makePlane(label, kind, plane) {
+      const point = toPoint(plane.point);
+      const normal = unit(plane.normal);
+      const axes = planeAxes(normal);
+      const size = kind === "reflection" ? 24 : 18;
+      const corners = [
+        add3(add3(plane.point, scale3(axes.u, -size)), scale3(axes.v, -size)),
+        add3(add3(plane.point, scale3(axes.u, size)), scale3(axes.v, -size)),
+        add3(add3(plane.point, scale3(axes.u, size)), scale3(axes.v, size)),
+        add3(add3(plane.point, scale3(axes.u, -size)), scale3(axes.v, size)),
+      ].map(toPoint);
+      return { label, kind, point, normal: toPoint(normal), corners };
+    }
+
+    function transformPlane(plane, transformPoint, transformNormal) {
+      const point = transformPoint(plane.point);
+      const normal = unit(transformNormal(plane.normal));
+      return { point, normal, d: -dot(normal, point) };
+    }
+
+    function mirrorPlane(imagePlane, reflectionPlane) {
+      const point = mirrorPoint(imagePlane.point, reflectionPlane);
+      const normal = reflectVector(imagePlane.normal, reflectionPlane.normal);
+      return { point, normal, d: -dot(normal, point) };
+    }
+
+    function mirrorPoint(point, plane) {
+      const normal = unit(plane.normal);
+      const signed = dot(normal, point) + plane.d;
+      return subtract(point, scale3(normal, 2 * signed));
+    }
+
+    function reflectVector(vector, normalInput) {
+      const normal = unit(normalInput);
+      return subtract(vector, scale3(normal, 2 * dot(vector, normal)));
+    }
+
+    function planeAxes(normal) {
+      const n = unit(normal);
+      const helper = Math.abs(n[2]) < 0.9 ? [0, 0, 1] : [0, 1, 0];
+      const u = unit(cross(helper, n));
+      const v = unit(cross(n, u));
+      return { u, v };
+    }
+
+    function pointFromRow(row, prefix, suffix) {
+      const x = Number(row[`${prefix}_x_${suffix}`]);
+      const y = Number(row[`${prefix}_y_${suffix}`]);
+      const z = Number(row[`${prefix}_z_${suffix}`]);
+      if (![x, y, z].every(Number.isFinite)) return null;
+      return { x, y, z };
+    }
+
+    function planeColor(kind) {
+      if (kind === "image") return COLORS.imagePlane;
+      if (kind === "reflection") return COLORS.reflectionPlane;
+      return COLORS.virtualPlane;
+    }
+
+    function toVector3(point) {
+      return new THREE.Vector3(point.x, point.y, point.z);
+    }
+
+    function useStoredText(key) {
+      const [value, setValue] = useState(() => localStorage.getItem(key) || "");
+      useEffect(() => {
+        if (value) localStorage.setItem(key, value);
+        else localStorage.removeItem(key);
+      }, [key, value]);
+      return [value, setValue];
+    }
+
+    function sampleVersion(name) {
+      return name.split("-")[1] || "";
+    }
+
+    function format(value) {
+      const number = Number(value);
+      return Number.isFinite(number) ? number.toFixed(2) : "";
+    }
+
+    function ensurePath(root, parts) {
+      return parts.reduce((node, part) => {
+        node[part] ||= {};
+        return node[part];
+      }, root);
+    }
+
+    function parseTomlValue(value) {
+      if (value.startsWith("\"")) return value.slice(1, -1);
+      if (value.startsWith("[")) return JSON.parse(value.replace(/,\s*]/g, "]"));
+      return Number(value);
+    }
+
+    function balancedBrackets(value) {
+      let depth = 0;
+      for (const char of value) {
+        if (char === "[") depth += 1;
+        if (char === "]") depth -= 1;
+      }
+      return depth === 0;
+    }
+
+    function identity3() {
+      return [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+    }
+
+    function transpose3(matrix) {
+      return matrix[0].map((_, col) => matrix.map((row) => row[col]));
+    }
+
+    function matrixVectorMul(matrix, vector) {
+      return matrix.map((row) => dot(row, vector));
+    }
+
+    function add3(first, second) {
+      return first.map((value, index) => value + second[index]);
+    }
+
+    function subtract(first, second) {
+      return first.map((value, index) => value - second[index]);
+    }
+
+    function scale3(vector, scale) {
+      return vector.map((value) => value * scale);
+    }
+
+    function dot(first, second) {
+      return first.reduce((sum, value, index) => sum + value * second[index], 0);
+    }
+
+    function cross(first, second) {
+      return [
+        first[1] * second[2] - first[2] * second[1],
+        first[2] * second[0] - first[0] * second[2],
+        first[0] * second[1] - first[1] * second[0],
+      ];
+    }
+
+    function unit(vector) {
+      const length = Math.hypot(...vector);
+      return vector.map((value) => value / length);
+    }
+
+    function toPoint(vector) {
+      return { x: vector[0], y: vector[1], z: vector[2] };
+    }
+
+    createRoot(document.getElementById("root")).render(React.createElement(App));
+  </script>
+</body>
+</html>
