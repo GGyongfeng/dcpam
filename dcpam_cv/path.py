@@ -2,26 +2,15 @@ from pathlib import Path
 
 
 class DCPAMPaths:
-    """~/.dcpam/ 全局路径管理。"""
+    """项目本地配置与输出路径管理。"""
 
     def __init__(self, root: Path | None = None):
-        self.root = root or Path.home() / ".dcpam"
+        # self.root = root or Path.home() / ".dcpam"
+        self.root = root or Path(__file__).resolve().parents[1]
 
     @property
-    def calibration_file(self) -> Path:
-        return self.root / "calibration.toml"
-
-    @property
-    def pipeline_file(self) -> Path:
-        return self.root / "pipeline.toml"
-
-    @property
-    def device_file(self) -> Path:
-        return self.root / "device.toml"
-
-    @property
-    def camera_file(self) -> Path:
-        return self.root / "camera.toml"
+    def config_file(self) -> Path:
+        return self.root / "config.toml"
 
     @property
     def captures_dir(self) -> Path:

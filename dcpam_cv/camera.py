@@ -9,7 +9,7 @@ import cv2
 import numpy as np
 from pydantic import BaseModel, ConfigDict
 
-from .config import CameraConfig, SingleCameraHardware, load_camera_config
+from .config import CameraConfig, SingleCameraHardware, load_config
 from .path import DCPAMPaths
 
 if TYPE_CHECKING:
@@ -83,7 +83,7 @@ class DualCamera:
         paths: DCPAMPaths | None = None,
     ):
         self.paths = paths or DCPAMPaths()
-        self.config = config or load_camera_config(self.paths.camera_file)
+        self.config = config or load_config(self.paths.config_file).camera
         self._front: _CameraHandle | None = None
         self._rear: _CameraHandle | None = None
 
@@ -139,7 +139,7 @@ class DualCamera:
         )
 
     def save(self, pair: ImagePair) -> ImagePair:
-        """保存图像对到 ~/.dcpam/captures/{uid}/，返回更新了路径的 ImagePair。"""
+        """保存图像对到项目 captures/{uid}/，返回更新了路径的 ImagePair。"""
         capture_dir = self.paths.capture_dir(pair.uid)
         capture_dir.mkdir(parents=True, exist_ok=True)
 

@@ -13,9 +13,11 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from dcpam_cv.path import DCPAMPaths
+
 
 OUTPUT_DIR = Path("dataset")
-MOCK_DIR = Path.home() / ".dcpam" / "mock"
+MOCK_DIR = DCPAMPaths().root / "mock"
 
 GAUSSIAN_KERNEL = 9
 GAUSSIAN_SIGMA = 2.0

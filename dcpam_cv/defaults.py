@@ -22,41 +22,34 @@ class DefaultConfigInitializer:
         return created
 
     def _files(self) -> dict[Path, str]:
-        return {
-            self.paths.camera_file: _CAMERA_TOML,
-            self.paths.calibration_file: _CALIBRATION_TOML,
-            self.paths.device_file: _DEVICE_TOML,
-            self.paths.pipeline_file: _PIPELINE_TOML,
-        }
+        return {self.paths.config_file: _CONFIG_TOML}
 
 
-_CAMERA_TOML = """[front]
+_CONFIG_TOML = """[camera.front]
 serial = ""
 exposure_auto = true
 gain_auto = true
 
-[rear]
+[camera.rear]
 serial = ""
 exposure_auto = true
 gain_auto = true
-"""
 
-
-_CALIBRATION_TOML = """[front_camera]
+[calibration.front_camera]
 model = "OPENCV"
 focal_lengths = [2990.6987249288663, 2977.3564887249863]
 principal_point = [1296.0, 972.0]
 distortion_coeffs = [-0.18636511590856567, 0.07840190379269005, 0.0022669627721650172, -5.4958790543323754e-05]
 resolution = [2592, 1944]
 
-[rear_camera]
+[calibration.rear_camera]
 model = "OPENCV"
 focal_lengths = [3110.5703660675968, 3097.2606630525938]
 principal_point = [1296.0, 972.0]
 distortion_coeffs = [-0.22375474192683689, 0.11599968695378729, -0.0010907287180217534, -0.001286167658601872]
 resolution = [2592, 1944]
 
-[transform]
+[calibration.transform]
 r_rear_from_front = [
     [0.99981958, -0.01442669, -0.01235624],
     [0.01451016, 0.99987232, 0.00669294],
@@ -65,37 +58,51 @@ r_rear_from_front = [
 t_rear_from_front = [-7.86547923, 0.15503238, 0.70268141]
 baseline_norm = 7.89832639
 
-[planes]
+[calibration.plane_sources.colmap]
+translation_scale = 10.0
+image_z_offset_mm = 2.0
 
-[planes.front_image_real]
-point = [0.89568958305, 11.6958981485, 5.23343140273]
-normal = [0.00492360142167, -0.0832961234852, 0.996512676267]
-d = -4.24536777526
+[calibration.plane_sources.colmap.poses.front_image_real]
+qw = 0.99894211725101356
+qx = 0.041629173538092784
+qy = 0.0032670746694997057
+qz = -0.0192609583277078
+tx = 0.089568958305045965
+ty = 1.169589814845861
+tz = 0.32334314027346434
 
-[planes.rear_image_real]
-point = [8.40410009288, 11.0517674219, 4.08626158655]
-normal = [0.014021645213, 0.0867422307864, 0.996132109142]
-d = -5.14695064286
+[calibration.plane_sources.colmap.poses.rear_image_real]
+qw = 0.99897717621314275
+qx = -0.043336816375192572
+qy = 0.007474341138556574
+qz = 0.010519314436925029
+tx = 0.8404100092877268
+ty = 1.1051767421873566
+tz = 0.20862615865511441
 
-[planes.front_reflection]
-point = [-47.8575602765, -8.18769513583, 15.0908206393]
-normal = [0.433725569982, 0.0533280620017, 0.899465534496]
-d = 7.62000847045
+[calibration.plane_sources.colmap.poses.front_reflection]
+qw = 0.97364224661064569
+qx = -0.017773449519223234
+qy = 0.22349795803090025
+qz = 0.041875325230739543
+tx = -4.7857560276513356
+ty = -0.81876951358304295
+tz = 1.5090820639262519
 
-[planes.rear_reflection]
-point = [-41.314707067, -2.88091562171, 11.0941717449]
-normal = [0.445325119069, 0.2168568307, 0.868710914692]
-d = 9.38559499095
-"""
+[calibration.plane_sources.colmap.poses.rear_reflection]
+qw = 0.96626197672734082
+qx = -0.10585653485599716
+qy = 0.23332153068748793
+qz = 0.026329634955708021
+tx = -4.1314707067044427
+ty = -0.28809156217078657
+tz = 1.1094171744869852
 
-
-_DEVICE_TOML = """[tool]
+[device.tool]
 mount_position = [0.0, 0.0, 0.0]
 bar_length = 200.0
-"""
 
-
-_PIPELINE_TOML = """[spot_extraction]
+[pipeline.spot_extraction]
 method = "improved_circle_fit"
 gaussian_kernel = 9
 gaussian_sigma = 2.0

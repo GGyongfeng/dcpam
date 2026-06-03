@@ -1,6 +1,7 @@
 from .back_projection import back_project
 from .coordinate_transform import rear_to_front
 from .distance import point_to_line_distance
+from .frame_pose import FramePoseEstimator
 from .mirror_transform import mirror_transform
 from .spot_extraction import extract_spots
 
@@ -10,4 +11,5 @@ __all__ = [
     "mirror_transform",
     "rear_to_front",
     "point_to_line_distance",
+    "FramePoseEstimator",
 ]

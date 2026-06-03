@@ -1,4 +1,4 @@
-"""补全光斑测量总表中的 V2 三维虚像点。
+"""补全光斑测量总表 dataset/spot-measurements.csv 中的 V2 三维虚像点。
 
 默认读取 dataset/spot-measurements.csv，保留 V1 圆心记录，并为 V2
 记录写入实像点、虚像点和统一到 C1 坐标系后的三维点。
@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 from pydantic import BaseModel
 
-from dcpam_cv.config import CalibrationConfig, load_calibration
+from dcpam_cv.config import CalibrationConfig, load_config
 from dcpam_cv.path import DCPAMPaths
 from dcpam_cv.steps.back_projection import back_project
 from dcpam_cv.steps.coordinate_transform import rear_to_front
@@ -223,10 +223,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="补全光斑测量总表的 V2 三维点")
     parser.add_argument("--input", type=Path, default=Path("dataset/spot-measurements.csv"))
     parser.add_argument("--output", type=Path, default=Path("dataset/spot-measurements.csv"))
-    parser.add_argument("--calibration", type=Path, default=DCPAMPaths().calibration_file)
+    parser.add_argument("--config", type=Path, default=DCPAMPaths().config_file)
     args = parser.parse_args()
 
-    calibration = load_calibration(args.calibration)
+    calibration = load_config(args.config).calibration
     _print_transform(calibration)
 
     records = _project_v2_records(_read_measurements(args.input), SpotCenterProjector(calibration))

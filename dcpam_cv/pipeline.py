@@ -8,7 +8,7 @@ from typing import Generator
 import numpy as np
 from rich.console import Console
 
-from .config import load_calibration, load_device_config, load_pipeline_config
+from .config import load_config
 from .path import DCPAMPaths
 from .steps import (
     back_project,
@@ -36,9 +36,10 @@ class DCPAMPipeline:
     """6 步测量 pipeline: 拍照 → 光斑提取 → 反投影 → 镜面变换 → 坐标变换 → 距离计算。"""
 
     def __init__(self, paths: DCPAMPaths) -> None:
-        self.calib = load_calibration(paths.calibration_file)
-        self.config = load_pipeline_config(paths.pipeline_file)
-        self.device = load_device_config(paths.device_file)
+        config = load_config(paths.config_file)
+        self.calib = config.calibration
+        self.config = config.pipeline
+        self.device = config.device
 
     def measure(
         self,

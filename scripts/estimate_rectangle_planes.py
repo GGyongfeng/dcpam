@@ -13,7 +13,7 @@ import cv2
 import numpy as np
 from pydantic import BaseModel
 
-from dcpam_cv.config import CameraIntrinsics, PlaneConfig, load_calibration
+from dcpam_cv.config import CameraIntrinsics, PlaneConfig, load_config
 from dcpam_cv.path import DCPAMPaths
 
 
@@ -122,7 +122,7 @@ class RectanglePlaneEstimator:
         self.output_dir = output_dir
         self.docs_dir = docs_dir
         self.work_scale = work_scale
-        self.calibration = load_calibration(DCPAMPaths().calibration_file)
+        self.calibration = load_config(DCPAMPaths().config_file).calibration
 
     def run(self) -> None:
         """估计所有图片的近/远两层矩形平面并保存结果。"""

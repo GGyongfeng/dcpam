@@ -26,6 +26,38 @@ class Point3D(BaseModel):
         return cls(x=float(arr[0]), y=float(arr[1]), z=float(arr[2]))
 
 
+class ImageQuadrilateral(BaseModel):
+    """图像中的四边形角点。"""
+    top_left: Point2D
+    top_right: Point2D
+    bottom_right: Point2D
+    bottom_left: Point2D
+
+    def to_array(self) -> np.ndarray:
+        """按左上、右上、右下、左下返回像素点。"""
+        return np.array(
+            [
+                [self.top_left.u, self.top_left.v],
+                [self.top_right.u, self.top_right.v],
+                [self.bottom_right.u, self.bottom_right.v],
+                [self.bottom_left.u, self.bottom_left.v],
+            ],
+            dtype=np.float64,
+        )
+
+
+class Pose3D(BaseModel):
+    """刚体位姿: P_target = R @ P_source + t。"""
+    rotation: list[list[float]]
+    translation: Point3D
+
+    def rotation_matrix(self) -> np.ndarray:
+        return np.array(self.rotation, dtype=np.float64)
+
+    def translation_vector(self) -> np.ndarray:
+        return self.translation.to_array()
+
+
 class SpotPair(BaseModel):
     """前后相机光斑像素坐标对。"""
     front: Point2D

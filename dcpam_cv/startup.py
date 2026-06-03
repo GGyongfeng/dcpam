@@ -145,10 +145,7 @@ def run_checks(paths: DCPAMPaths) -> list[CheckResult]:
         results.append(CheckResult(name="交换机 IP", passed=False, message="跳过", remedy="请先安装 Aravis"))
         results.append(CheckResult(name="双相机", passed=False, message="跳过", remedy="请先安装 Aravis"))
 
-    results.append(_check_file("camera.toml", paths.camera_file))
-    results.append(_check_file("calibration.toml", paths.calibration_file))
-    results.append(_check_file("device.toml", paths.device_file))
-    results.append(_check_file("pipeline.toml", paths.pipeline_file))
+    results.append(_check_file("config.toml", paths.config_file))
 
     return results
 

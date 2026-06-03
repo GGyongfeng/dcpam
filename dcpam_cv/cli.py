@@ -3,8 +3,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 from datetime import datetime
+from pathlib import Path
 
 import cv2
 
@@ -46,7 +48,7 @@ def _capture_once(camera, pipeline: DCPAMPipeline, paths: DCPAMPaths, capture_on
 
 
 def _mock_once(pipeline: DCPAMPipeline, paths: DCPAMPaths) -> None:
-    """mock 模式：从 ~/.dcpam/mock/ 加载图片执行测量。"""
+    """mock 模式：从项目 mock/ 加载图片执行测量。"""
     mock_dir = paths.root / "mock"
     front_path = mock_dir / "front.png"
     rear_path = mock_dir / "rear.png"
@@ -111,10 +113,14 @@ def main() -> None:
     """dcpam CLI 入口。"""
     _ensure_aravis_libs()
 
+    if len(sys.argv) > 1 and sys.argv[1] in {"ui", "web"}:
+        _run_web_ui(sys.argv[2:])
+        return
+
     parser = argparse.ArgumentParser(description="DCPAM — Dual-Camera Point-to-Axis Measurement")
     parser.add_argument("-o", "--once", action="store_true", help="单次拍照后退出")
     parser.add_argument("-c", "--capture-only", action="store_true", help="仅拍照，跳过测量")
-    parser.add_argument("-m", "--mock", action="store_true", help="mock 模式：从 ~/.dcpam/mock/ 加载图片")
+    parser.add_argument("-m", "--mock", action="store_true", help="mock 模式：从项目 mock/ 加载图片")
     args = parser.parse_args()
 
     paths = DCPAMPaths()
@@ -139,3 +145,15 @@ def main() -> None:
             _interactive(camera, pipeline, paths, args.capture_only)
 
     console.print("  [dim]Cameras closed. Bye.[/]")
+
+
+def _run_web_ui(extra_args: list[str]) -> None:
+    """启动 React/Three.js 前端开发服务。"""
+    web_dir = Path(__file__).resolve().parent / "web"
+    if not (web_dir / "node_modules").exists():
+        console.print(f"  [yellow]请先安装前端依赖：cd {web_dir} && npm install[/]")
+        return
+    command = ["npm", "run", "dev"]
+    if extra_args:
+        command.extend(["--", *extra_args])
+    subprocess.run(command, cwd=web_dir, check=True)

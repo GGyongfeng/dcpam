@@ -1,7 +1,7 @@
 """批量提取 dataset 中前后相机光斑圆心。
 
-输入是 dataset/L109D*-vN/front 与 rear 图片；输出是版本化的
-1-Spot-Center*.csv，作为后续三维反投影的像素坐标输入。
+输入是 dataset/L109D*-vN/front 与 rear 图片
+输出是版本化的 1-Spot-Center*.csv，作为后续三维反投影的像素坐标输入。
 """
 from __future__ import annotations
 

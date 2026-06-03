@@ -73,13 +73,13 @@ uv run dcpam -o
 uv run dcpam -o -c
 ```
 
-Mock 模式（从 `~/.dcpam/mock/` 加载图片，无需相机）：
+Mock 模式（从项目 `mock/` 加载图片，无需相机）：
 
 ```bash
 uv run dcpam -m
 ```
 
-数据保存到 `~/.dcpam/captures/{uid}/`，包含 `front.png`、`rear.png`、`result.json`。
+数据保存到项目 `captures/{uid}/`，包含 `front.png`、`rear.png`、`result.json`。
 
 ### 精度分析
 
