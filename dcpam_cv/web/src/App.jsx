@@ -13,11 +13,13 @@ const STORAGE_KEYS = {
 };
 
 const DEFAULT_LAYERS = {
-  axes: true,
   cameras: true,
+  deviceModel: true,
+  opticalAxes: true,
   imagePlanes: true,
   reflectionPlanes: true,
   virtualPlanes: true,
+  frames: true,
   frontVirtual: true,
   rearVirtual: true,
   realPoints: false,
@@ -31,7 +33,6 @@ export function App() {
   const [csvName, setCsvName] = useStoredText(STORAGE_KEYS.csvName);
   const [tomlName, setTomlName] = useStoredText(STORAGE_KEYS.tomlName);
   const [selected, setSelected] = useState(new Set());
-  const [version, setVersion] = useState("V2");
   const [layers, setLayers] = useState(DEFAULT_LAYERS);
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
@@ -47,28 +48,14 @@ export function App() {
       return null;
     }
   }, [tomlText]);
-  const versions = useMemo(
-    () => [...new Set(rows.map((row) => sampleVersion(row.name)).filter(Boolean))].sort(),
-    [rows],
-  );
-  const filteredRows = useMemo(
-    () => version === "all" ? rows : rows.filter((row) => sampleVersion(row.name) === version),
-    [rows, version],
-  );
   const selectedRows = useMemo(
-    () => filteredRows.filter((row) => selected.has(row.name)),
-    [filteredRows, selected],
+    () => rows.filter((row) => selected.has(row.name)),
+    [rows, selected],
   );
 
   useEffect(() => {
-    if (!rows.length) {
-      setSelected(new Set());
-      return;
-    }
-    const nextVersion = versions.includes("V2") ? "V2" : versions[0] || "all";
-    setVersion(nextVersion);
-    setSelected(new Set(rows.filter((row) => sampleVersion(row.name) === nextVersion).map((row) => row.name)));
-  }, [csvText, rows.length, versions.join("|")]);
+    setSelected(new Set(rows.map((row) => row.name)));
+  }, [csvText, rows.length]);
 
   const onFile = async (event, setter, nameSetter) => {
     const file = event.target.files?.[0];
@@ -77,6 +64,9 @@ export function App() {
     nameSetter(file.name);
   };
   const setLayer = (key, value) => setLayers((current) => ({ ...current, [key]: value }));
+  const setAllLayers = (value) => {
+    setLayers(Object.fromEntries(Object.keys(DEFAULT_LAYERS).map((key) => [key, value])));
+  };
   const clearCache = () => {
     setCsvText("");
     setTomlText("");
@@ -87,13 +77,12 @@ export function App() {
 
   return (
     <main className={`app ${sidebarOpen ? "" : "sidebar-collapsed"}`}>
-      <button
-        type="button"
+      <IconButton
         className="sidebar-toggle"
+        icon={sidebarOpen ? "‹" : "›"}
+        label={sidebarOpen ? "收起侧边栏" : "展开侧边栏"}
         onClick={() => setSidebarOpen((current) => !current)}
-      >
-        {sidebarOpen ? "收起" : "展开"}
-      </button>
+      />
       <aside className="sidebar">
         <div className="brand-row">
           <div className="brand">
@@ -106,38 +95,31 @@ export function App() {
           tomlName={tomlName}
           onCsv={(event) => onFile(event, setCsvText, setCsvName)}
           onToml={(event) => onFile(event, setTomlText, setTomlName)}
+          clearCache={clearCache}
         />
         <section className="section">
-          <h2>样本选择</h2>
-          <div className="sample-tools">
-            <select value={version} onChange={(event) => setVersion(event.target.value)}>
-              <option value="all">全部版本</option>
-              {versions.map((item) => <option key={item} value={item}>{item}</option>)}
-            </select>
-            <button type="button" onClick={() => setSelected(new Set(filteredRows.map((row) => row.name)))}>
-              全选
-            </button>
-            <button type="button" onClick={() => setSelected(new Set())}>清空</button>
-            <button
-              type="button"
-              className="primary"
-              disabled={!versions.includes("V2")}
-              onClick={() => setSelected(new Set(rows.filter((row) => sampleVersion(row.name) === "V2").map((row) => row.name)))}
-            >
-              V2
-            </button>
-          </div>
-          <LayerSection layers={layers} setLayer={setLayer} />
-          <button type="button" className="ghost-button" onClick={clearCache}>清除缓存</button>
+          <LayerSection layers={layers} setLayer={setLayer} setAllLayers={setAllLayers} />
         </section>
         <section className="section">
-          <h2>样本</h2>
-          <SampleTable rows={filteredRows} selected={selected} setSelected={setSelected} />
+          <div className="section-title-row">
+            <h2>样本</h2>
+            <div className="sample-tools">
+              <button type="button" className="primary" onClick={() => setSelected(new Set(rows.map((row) => row.name)))}>
+                <span className="button-icon">✓</span>
+                全选
+              </button>
+              <button type="button" onClick={() => setSelected(new Set())}>
+                <span className="button-icon">×</span>
+                清空
+              </button>
+            </div>
+          </div>
+          <SampleTable rows={rows} selected={selected} setSelected={setSelected} />
           <div className="stats">
             <Stat value={rows.length} label="CSV 行" />
             <Stat value={selectedRows.length} label="已选择" />
             <Stat value={geometry?.planes.length || 0} label="平面" />
-            <Stat value={geometry?.cameras.length || 0} label="相机" />
+            <Stat value={geometry?.frames.length || 0} label="框" />
           </div>
         </section>
       </aside>
@@ -145,24 +127,26 @@ export function App() {
         <SceneView rows={selectedRows} geometry={geometry} layers={layers} />
         {!rows.length && !geometry && <div className="empty">上传 CSV 和 config.toml 后显示 3D 场景</div>}
         <div className="corner-help">
-          CAD 视角操作：左键旋转，滚轮缩放，右键平移。上传 config.toml 后会显示实像面、反射面、虚像面和相机位。
-        </div>
-        <div className="hud">
-          <LegendChip color="var(--green)" label="前虚像点" />
-          <LegendChip color="var(--orange)" label="后虚像点" />
-          <LegendChip color="var(--blue)" label="实像面" />
-          <LegendChip color="var(--purple)" label="反射面" />
-          <LegendChip color="var(--cyan)" label="虚像面" />
+          CAD 视角操作：左键旋转，滚轮缩放，右键平移。上传 config.toml 后会显示光轴、实像面、反射面、虚像面、取景框和相机位。
         </div>
       </section>
     </main>
   );
 }
 
-function FileSection({ csvName, tomlName, onCsv, onToml }) {
+function FileSection({ csvName, tomlName, onCsv, onToml, clearCache }) {
   return (
     <section className="section">
-      <h2>文件</h2>
+      <div className="section-title-row">
+        <h2>文件</h2>
+        <IconButton
+          className="clear-button"
+          icon="×"
+          text="清空"
+          label="清空上传文件"
+          onClick={clearCache}
+        />
+      </div>
       <div className="file-actions">
         <label className="file-button">
           上传 CSV
@@ -181,13 +165,15 @@ function FileSection({ csvName, tomlName, onCsv, onToml }) {
   );
 }
 
-function LayerSection({ layers, setLayer }) {
+function LayerSection({ layers, setLayer, setAllLayers }) {
   const items = [
-    ["axes", "右下角坐标系"],
     ["cameras", "相机位置"],
+    ["deviceModel", "设备结构"],
+    ["opticalAxes", "光轴"],
     ["imagePlanes", "实像面"],
     ["reflectionPlanes", "反射面"],
     ["virtualPlanes", "虚像面"],
+    ["frames", "取景框"],
     ["frontVirtual", "前虚像点"],
     ["rearVirtual", "后虚像点"],
     ["realPoints", "实像点"],
@@ -196,7 +182,19 @@ function LayerSection({ layers, setLayer }) {
   ];
   return (
     <div className="layer-panel">
-      <h3>显示图层</h3>
+      <div className="section-title-row">
+        <h3>图层</h3>
+        <div className="sample-tools">
+          <button type="button" className="primary" onClick={() => setAllLayers(true)}>
+            <span className="button-icon">✓</span>
+            全选
+          </button>
+          <button type="button" onClick={() => setAllLayers(false)}>
+            <span className="button-icon">×</span>
+            清空
+          </button>
+        </div>
+      </div>
       <div className="checks">
         {items.map(([key, label]) => (
           <label className="check" key={key}>
@@ -209,6 +207,15 @@ function LayerSection({ layers, setLayer }) {
   );
 }
 
+function IconButton({ className = "", icon, text = "", label, onClick }) {
+  return (
+    <button type="button" className={`icon-button ${className}`} title={label} aria-label={label} onClick={onClick}>
+      <span className={text && icon ? "button-icon" : ""}>{icon}</span>
+      {text}
+    </button>
+  );
+}
+
 function Stat({ value, label }) {
   return (
     <div className="stat">
@@ -216,10 +223,6 @@ function Stat({ value, label }) {
       <span>{label}</span>
     </div>
   );
-}
-
-function LegendChip({ color, label }) {
-  return <span className="chip" style={{ "--chip": color }}>{label}</span>;
 }
 
 function SampleTable({ rows, selected, setSelected }) {
@@ -258,10 +261,6 @@ function SampleTable({ rows, selected, setSelected }) {
       </table>
     </div>
   );
-}
-
-function sampleVersion(name) {
-  return name.split("-")[1] || "";
 }
 
 function format(value) {
