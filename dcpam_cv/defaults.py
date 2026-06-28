@@ -25,15 +25,12 @@ class DefaultConfigInitializer:
         return {self.paths.config_file: _CONFIG_TOML}
 
 
-_CONFIG_TOML = """[camera.front]
-serial = ""
-exposure_auto = true
-gain_auto = true
+_CONFIG_TOML = """[pipeline.spot_extraction]
+method = "improved_circle_fit"
+gaussian_kernel = 9
+gaussian_sigma = 2.0
+centroid_threshold = 0.3
 
-[camera.rear]
-serial = ""
-exposure_auto = true
-gain_auto = true
 
 [calibration.front_camera]
 model = "OPENCV"
@@ -44,67 +41,78 @@ resolution = [2592, 1944]
 
 [calibration.rear_camera]
 model = "OPENCV"
-focal_lengths = [3110.5703660675968, 3097.2606630525938]
+focal_lengths = [3110.5703660675968, 3097.260663052594]
 principal_point = [1296.0, 972.0]
-distortion_coeffs = [-0.22375474192683689, 0.11599968695378729, -0.0010907287180217534, -0.001286167658601872]
+distortion_coeffs = [-0.2237547419268369, 0.11599968695378729, -0.0010907287180217534, -0.001286167658601872]
 resolution = [2592, 1944]
 
-[calibration.transform]
-r_rear_from_front = [
-    [0.99981958, -0.01442669, -0.01235624],
-    [0.01451016, 0.99987232, 0.00669294],
-    [0.01225810, -0.00687103, 0.99990126],
+[calibration.frame_surfaces.front_frame_pnp]
+method = "pnp_frame_pose"
+width_mm = 22.0
+height_mm = 17.0
+point = [-0.31316080434, -0.152703843963, 31.451463126367]
+x_axis = [0.996019661834, -0.003407355985, -0.089068642996]
+y_axis = [0.006126892679, 0.999522753242, 0.030277498883]
+normal = [0.088922969058, -0.030702698215, 0.995565191184]
+d = -31.288823131926
+corners = [
+    [-11.321455672286, -8.611166330681, 32.173859458819],
+    [10.590976888063, -8.686128162351, 30.214349312908],
+    [10.695134063606, 8.305758642754, 30.729066793915],
+    [-11.217298496744, 8.380720474425, 32.688576939825],
 ]
-t_rear_from_front = [-7.86547923, 0.15503238, 0.70268141]
-baseline_norm = 7.89832639
+reprojection_error_px = 34.798883421550414
 
-[calibration.plane_sources.colmap]
-translation_scale = 10.0
-image_z_offset_mm = 2.0
+[calibration.frame_surfaces.rear_frame_pnp]
+method = "pnp_frame_pose"
+width_mm = 22.0
+height_mm = 17.0
+point = [-0.361361300837, -0.15688045129, 32.154834528736]
+x_axis = [0.999974922605, 0.003492190779, -0.00616106852]
+y_axis = [-0.003265116741, 0.999328718002, 0.036489072184]
+normal = [0.006284359507, -0.036468040526, 0.999315059851]
+d = -32.136260589924
+corners = [
+    [-11.333331957191, -8.689588652878, 31.912449168891],
+    [10.666116340112, -8.61276045574, 31.776905661445],
+    [10.610609355518, 8.375827750297, 32.397219888581],
+    [-11.388838941785, 8.298999553159, 32.532763396026],
+]
+reprojection_error_px = 35.1643625650104
 
-[calibration.plane_sources.colmap.poses.front_image_real]
-qw = 0.99894211725101356
-qx = 0.041629173538092784
-qy = 0.0032670746694997057
-qz = -0.0192609583277078
-tx = 0.089568958305045965
-ty = 1.169589814845861
-tz = 0.32334314027346434
+[device.geometry.view_frame]
+width_mm = 22.0
+height_mm = 17.0
 
-[calibration.plane_sources.colmap.poses.rear_image_real]
-qw = 0.99897717621314275
-qx = -0.043336816375192572
-qy = 0.007474341138556574
-qz = 0.010519314436925029
-tx = 0.8404100092877268
-ty = 1.1051767421873566
-tz = 0.20862615865511441
+[device.geometry.front_frame]
+point = [0.0, 0.0, 0.0]
+normal = [0.0, 0.0, 1.0]
+rect_corners = [
+    [-11.0, -8.5, 0.0],
+    [11.0, -8.5, 0.0],
+    [11.0, 8.5, 0.0],
+    [-11.0, 8.5, 0.0],
+]
 
-[calibration.plane_sources.colmap.poses.front_reflection]
-qw = 0.97364224661064569
-qx = -0.017773449519223234
-qy = 0.22349795803090025
-qz = 0.041875325230739543
-tx = -4.7857560276513356
-ty = -0.81876951358304295
-tz = 1.5090820639262519
+[device.geometry.rear_frame]
+point = [80.0, 0.0, 0.0]
+normal = [0.0, 0.0, 1.0]
+rect_corners = [
+    [69.0, -8.5, 0.0],
+    [91.0, -8.5, 0.0],
+    [91.0, 8.5, 0.0],
+    [69.0, 8.5, 0.0],
+]
 
-[calibration.plane_sources.colmap.poses.rear_reflection]
-qw = 0.96626197672734082
-qx = -0.10585653485599716
-qy = 0.23332153068748793
-qz = 0.026329634955708021
-tx = -4.1314707067044427
-ty = -0.28809156217078657
-tz = 1.1094171744869852
+[device.geometry.front_reflection]
+point = [0.0, 0.0, 23.0]
+normal = [0.7071067811865475, 0.0, 0.7071067811865475]
 
-[device.tool]
-mount_position = [0.0, 0.0, 0.0]
-bar_length = 200.0
+[device.geometry.rear_reflection]
+point = [80.0, 0.0, 23.0]
+normal = [0.7071067811865475, 0.0, 0.7071067811865475]
 
-[pipeline.spot_extraction]
-method = "improved_circle_fit"
-gaussian_kernel = 9
-gaussian_sigma = 2.0
-centroid_threshold = 0.3
+[device.geometry.probe_rod]
+root = [41.0, 37.0, -132.0]
+length_mm = 109.0
 """

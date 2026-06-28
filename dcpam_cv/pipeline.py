@@ -9,15 +9,10 @@ import numpy as np
 from rich.console import Console
 
 from .config import load_config
+from .optical_geometry import OpticalGeometry
 from .path import DCPAMPaths
-from .steps import (
-    back_project,
-    extract_spots,
-    mirror_transform,
-    point_to_line_distance,
-    rear_to_front,
-)
-from .types import LaserAxis, MeasurementResult, Point3D
+from .steps import back_project, extract_spots, mirror_transform, point_to_line_distance
+from .types import LaserAxis, MeasurementResult
 
 console = Console()
 
@@ -33,13 +28,16 @@ def step(name: str) -> Generator[None, None, None]:
 
 
 class DCPAMPipeline:
-    """6 步测量 pipeline: 拍照 → 光斑提取 → 反投影 → 镜面变换 → 坐标变换 → 距离计算。"""
+    """5 步设备坐标系测量 pipeline:
+    拍照 → 光斑提取 → 反投影 → 实像点入设备系 → 设备系镜像 → 距离计算。
+    """
 
     def __init__(self, paths: DCPAMPaths) -> None:
         config = load_config(paths.config_file)
         self.calib = config.calibration
         self.config = config.pipeline
         self.device = config.device
+        self.optics = OpticalGeometry(self.calib, self.device)
 
     def measure(
         self,
@@ -57,23 +55,28 @@ class DCPAMPipeline:
         )
 
         with step("3/6 反投影"):
-            front_3d = back_project(spots.front, self.calib.front_camera, self.calib.planes.front_image_real)
-            rear_3d = back_project(spots.rear, self.calib.rear_camera, self.calib.planes.rear_image_real)
+            front_real_cam = back_project(spots.front, self.calib.front_camera, self.optics.front_image_real)
+            rear_real_cam = back_project(spots.rear, self.calib.rear_camera, self.optics.rear_image_real)
         console.print(
-            f"        front=({front_3d.x:.3f}, {front_3d.y:.3f}, {front_3d.z:.3f})"
-            f"  rear=({rear_3d.x:.3f}, {rear_3d.y:.3f}, {rear_3d.z:.3f})",
+            f"        front_C1=({front_real_cam.x:.3f}, {front_real_cam.y:.3f}, {front_real_cam.z:.3f})"
+            f"  rear_C2=({rear_real_cam.x:.3f}, {rear_real_cam.y:.3f}, {rear_real_cam.z:.3f})",
         )
 
-        with step("4/6 镜面变换"):
-            front_virtual = mirror_transform(front_3d, self.calib.planes.front_reflection)
-            rear_virtual = mirror_transform(rear_3d, self.calib.planes.rear_reflection)
+        with step("4/6 实像点入设备系"):
+            front_real = self.optics.front_camera_to_device.point(front_real_cam)
+            rear_real = self.optics.rear_camera_to_device.point(rear_real_cam)
+        console.print(
+            f"        front=({front_real.x:.3f}, {front_real.y:.3f}, {front_real.z:.3f})"
+            f"  rear=({rear_real.x:.3f}, {rear_real.y:.3f}, {rear_real.z:.3f})",
+        )
 
-        with step("5/6 坐标变换"):
-            rear_in_c1 = rear_to_front(rear_virtual, self.calib.transform)
-            axis = LaserAxis(front=front_virtual, rear=rear_in_c1)
+        with step("5/6 设备系镜像"):
+            front_virtual = mirror_transform(front_real, self.optics.front_reflection)
+            rear_virtual = mirror_transform(rear_real, self.optics.rear_reflection)
+            axis = LaserAxis(front=front_virtual, rear=rear_virtual)
 
         with step("6/6 距离计算"):
-            target = self._target_point()
+            target = self.optics.target_point
             distance = point_to_line_distance(target, axis)
 
         return MeasurementResult(
@@ -84,8 +87,3 @@ class DCPAMPipeline:
             target_point=target,
             spots=spots,
         )
-
-    def _target_point(self) -> Point3D:
-        """从 DeviceConfig.tool 计算被测目标点坐标。"""
-        mx, my, mz = self.device.tool.mount_position
-        return Point3D(x=mx, y=my, z=mz + self.device.tool.bar_length)

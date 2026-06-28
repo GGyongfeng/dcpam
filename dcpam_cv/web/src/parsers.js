@@ -83,6 +83,8 @@ function ensurePath(root, parts) {
 function parseTomlValue(value) {
   if (value.startsWith("\"")) return value.slice(1, -1);
   if (value.startsWith("[")) return JSON.parse(value.replace(/,\s*]/g, "]"));
+  if (value === "true") return true;
+  if (value === "false") return false;
   return Number(value);
 }
 

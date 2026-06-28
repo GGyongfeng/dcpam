@@ -2,9 +2,7 @@ import tomllib
 from pathlib import Path
 
 import numpy as np
-from pydantic import BaseModel, model_validator
-
-from .plane_calibration import ColmapPlaneSource, derive_planes_from_colmap
+from pydantic import BaseModel
 
 
 # ---------------------------------------------------------------------------
@@ -47,23 +45,9 @@ class CameraIntrinsics(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
 
-class TransformConfig(BaseModel):
-    """前→后相机刚体变换。"""
-    r_rear_from_front: list[list[float]]
-    t_rear_from_front: list[float]
-    baseline_norm: float
-
-    def rotation_matrix(self) -> np.ndarray:
-        return np.array(self.r_rear_from_front, dtype=np.float64)
-
-    def translation_vector(self) -> np.ndarray:
-        return np.array(self.t_rear_from_front, dtype=np.float64)
-
-    model_config = {"arbitrary_types_allowed": True}
-
-
 class PlaneConfig(BaseModel):
     """相机坐标系下的平面表示。"""
+    method: str | None = None
     point: tuple[float, float, float]
     normal: tuple[float, float, float]
     d: float
@@ -71,67 +55,38 @@ class PlaneConfig(BaseModel):
 
 class PlaneCalibrationConfig(BaseModel):
     """四个光学平面的标定结果。"""
-    front_image_real: PlaneConfig
-    rear_image_real: PlaneConfig
-    front_reflection: PlaneConfig
-    rear_reflection: PlaneConfig
+    front_image_real: PlaneConfig | None = None
+    rear_image_real: PlaneConfig | None = None
+    front_reflection: PlaneConfig | None = None
+    rear_reflection: PlaneConfig | None = None
 
 
-class PlaneSourceConfig(BaseModel):
-    """光学平面原始标定来源。"""
-    colmap: ColmapPlaneSource | None = None
-
-
-class FramePoseConfig(BaseModel):
-    """取景框坐标系到相机坐标系的外参。"""
-    frame_width_mm: float | None = None
-    frame_height_mm: float | None = None
-    rotation_frame_to_camera: list[list[float]]
-    translation_frame_to_camera: list[float]
-    matrix_frame_to_camera: list[list[float]] | None = None
-    matrix_camera_to_frame: list[list[float]] | None = None
+class FrameSurfaceConfig(BaseModel):
+    """PnP 得到的取景框平面与角点。"""
+    method: str = "pnp_frame_pose"
+    width_mm: float
+    height_mm: float
+    point: tuple[float, float, float]
+    x_axis: tuple[float, float, float]
+    y_axis: tuple[float, float, float]
+    normal: tuple[float, float, float]
+    d: float
+    corners: list[tuple[float, float, float]]
     reprojection_error_px: float
 
-    def rotation_matrix(self) -> np.ndarray:
-        return np.array(self.rotation_frame_to_camera, dtype=np.float64)
 
-    def translation_vector(self) -> np.ndarray:
-        return np.array(self.translation_frame_to_camera, dtype=np.float64)
-
-    model_config = {"arbitrary_types_allowed": True}
-
-
-class FrameCalibrationConfig(BaseModel):
-    """前后取景框位姿标定结果。"""
-    front_frame_pose: FramePoseConfig | None = None
-    rear_frame_pose: FramePoseConfig | None = None
+class FrameSurfaceCalibrationConfig(BaseModel):
+    """取景框在相机坐标系下的直接几何表示。"""
+    front_frame_pnp: FrameSurfaceConfig | None = None
+    rear_frame_pnp: FrameSurfaceConfig | None = None
 
 
 class CalibrationConfig(BaseModel):
     """完整标定配置。"""
     front_camera: CameraIntrinsics
     rear_camera: CameraIntrinsics
-    transform: TransformConfig
-    planes: PlaneCalibrationConfig
-    plane_sources: PlaneSourceConfig | None = None
-    frames: FrameCalibrationConfig = FrameCalibrationConfig()
-
-    @model_validator(mode="before")
-    @classmethod
-    def derive_planes(cls, data: dict) -> dict:
-        """配置未直接提供 planes 时，从原始标定来源派生。"""
-        if data.get("planes") is not None:
-            return data
-        sources = data.get("plane_sources") or {}
-        colmap = sources.get("colmap")
-        if colmap is None:
-            return data
-        source = ColmapPlaneSource(**colmap)
-        data["planes"] = {
-            name: plane.model_dump()
-            for name, plane in derive_planes_from_colmap(source).items()
-        }
-        return data
+    planes: PlaneCalibrationConfig = PlaneCalibrationConfig()
+    frame_surfaces: FrameSurfaceCalibrationConfig = FrameSurfaceCalibrationConfig()
 
 
 # ---------------------------------------------------------------------------
@@ -155,15 +110,44 @@ class PipelineConfig(BaseModel):
 # Device config
 # ---------------------------------------------------------------------------
 
-class ToolConfig(BaseModel):
-    """被测工具参数 (mm)。"""
-    mount_position: tuple[float, float, float]
-    bar_length: float
+class ViewFrameGeometryConfig(BaseModel):
+    """取景框透光矩形尺寸。"""
+    width_mm: float
+    height_mm: float
+
+
+class DeviceFrameGeometryConfig(BaseModel):
+    """设备坐标系下的取景框平面。"""
+    point: tuple[float, float, float]
+    normal: tuple[float, float, float]
+    rect_corners: list[tuple[float, float, float]]
+
+
+class DeviceReflectionGeometryConfig(BaseModel):
+    """设备坐标系下的反射平面。"""
+    point: tuple[float, float, float]
+    normal: tuple[float, float, float]
+
+
+class ProbeRodGeometryConfig(BaseModel):
+    """设备坐标系下的探测杆。"""
+    root: tuple[float, float, float]
+    length_mm: float
+
+
+class DeviceGeometryConfig(BaseModel):
+    """算法关心的设备几何。"""
+    view_frame: ViewFrameGeometryConfig
+    front_frame: DeviceFrameGeometryConfig
+    rear_frame: DeviceFrameGeometryConfig
+    front_reflection: DeviceReflectionGeometryConfig
+    rear_reflection: DeviceReflectionGeometryConfig
+    probe_rod: ProbeRodGeometryConfig
 
 
 class DeviceConfig(BaseModel):
     """设备完整配置。"""
-    tool: ToolConfig
+    geometry: DeviceGeometryConfig
 
 
 class AppConfig(BaseModel):

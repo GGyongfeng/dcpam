@@ -1,0 +1,583 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DCPAM Pipeline 对比报告</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7fb;
+      --panel: #ffffff;
+      --text: #16181d;
+      --muted: #6b7280;
+      --line: #d9dde7;
+      --old: #2f6df6;
+      --new: #00a376;
+      --delta: #ef7d22;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+
+    main {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 32px;
+    }
+
+    header {
+      margin-bottom: 24px;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      height: 38px;
+      padding: 0 14px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--panel);
+      color: var(--text);
+      text-decoration: none;
+      font-weight: 700;
+      box-shadow: 0 8px 18px rgba(17, 24, 39, 0.05);
+    }
+
+    .back-link:hover {
+      border-color: #aeb5c4;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 32px;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin: 0 0 14px;
+      font-size: 20px;
+    }
+
+    h3 {
+      margin: 0 0 8px;
+      font-size: 16px;
+    }
+
+    p {
+      margin: 0 0 10px;
+      color: var(--muted);
+    }
+
+    code {
+      padding: 1px 5px;
+      border-radius: 5px;
+      background: #eef1f7;
+      color: #111827;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+      margin: 16px 0;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 18px;
+      box-shadow: 0 10px 30px rgba(17, 24, 39, 0.05);
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 12px;
+      margin: 16px 0;
+    }
+
+    .stat {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px;
+    }
+
+    .label {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .value {
+      margin-top: 4px;
+      font-size: 22px;
+      font-weight: 750;
+    }
+
+    .legend {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font-size: 13px;
+      margin: 8px 0 12px;
+    }
+
+    .dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      margin-right: 6px;
+      border-radius: 50%;
+      vertical-align: -1px;
+    }
+
+    .chart {
+      height: 430px;
+      width: 100%;
+      overflow: visible;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      overflow: hidden;
+      font-size: 13px;
+    }
+
+    th,
+    td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    th {
+      background: #eef1f7;
+      color: #374151;
+      font-weight: 700;
+    }
+
+    td:first-child,
+    th:first-child {
+      text-align: left;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .section {
+      margin-top: 22px;
+    }
+
+    .note {
+      border-left: 4px solid var(--delta);
+      background: #fff7ed;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .step {
+      min-height: 86px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fbfcff;
+    }
+
+    .step strong {
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .step span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    @media (max-width: 900px) {
+      main {
+        padding: 18px;
+      }
+
+      .grid,
+      .stats,
+      .flow {
+        grid-template-columns: 1fr;
+      }
+
+      table {
+        display: block;
+        overflow-x: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <nav class="topbar">
+      <a class="back-link" href="index.html">← 返回实验时间轴</a>
+    </nav>
+
+    <header>
+      <h1>DCPAM Pipeline 对比报告</h1>
+      <p>
+        数据来源：
+        <code>dataset/spot-measurements.csv</code>
+        与
+        <code>dataset/spot-measurements-device.csv</code>。
+        本报告比较两种方法得到的靶点到激光线距离，单位均为 mm。
+      </p>
+    </header>
+
+    <section class="grid">
+      <article class="card">
+        <h2>方法 A：相机外参统一法</h2>
+        <p>
+          先在 C1、C2 各自相机坐标系下完成实像面反投影和镜像反射，
+          然后使用 C2 到 C1 的外参矩阵把后虚像点统一到 C1 坐标系，
+          最后在 C1 坐标系下计算靶点到激光线距离。
+        </p>
+      </article>
+      <article class="card">
+        <h2>方法 B：设备坐标系统一法</h2>
+        <p>
+          先在各自相机坐标系下反投影到实像面，再通过 PnP 实像面与设备实像面
+          的对齐关系转到设备坐标系。镜像反射和距离计算都在设备坐标系中完成，
+          不使用 C2 到 C1 外参作为几何约束。
+        </p>
+      </article>
+    </section>
+
+    <section class="card">
+      <h2>新方法 Pipeline</h2>
+      <div class="flow">
+        <div class="step"><strong>1. 提取圆心</strong><span>得到前后相机像素 UV。</span></div>
+        <div class="step"><strong>2. 反投影到实像面</strong><span>得到 C1/C2 坐标系下实像点。</span></div>
+        <div class="step"><strong>3. 转到设备坐标系</strong><span>使用 PnP 面与设备面重合关系。</span></div>
+        <div class="step"><strong>4. 设备系镜像</strong><span>根据设备几何反射面生成虚像点。</span></div>
+        <div class="step"><strong>5. 计算距离</strong><span>靶点与激光线都位于设备坐标系。</span></div>
+      </div>
+    </section>
+
+    <section class="stats" id="summary"></section>
+
+    <section class="card note">
+      <h2>稳定性结论</h2>
+      <p>
+        均值差主要反映两种方法的系统偏移：当前所有组里方法 B 都比方法 A 小，
+        平均约小 <strong>0.404 mm</strong>。稳定性需要看同一组内的波动，
+        因此本报告重点比较 <strong>标准差</strong> 和 <strong>极差</strong>。
+        表格中的 <code>B-A 标准差差值</code> 与 <code>B-A 极差差值</code>
+        如果为负，表示方法 B 在该组更稳定。
+      </p>
+    </section>
+
+    <section class="card section">
+      <h2>各组均值对比</h2>
+      <div class="legend">
+        <span><i class="dot" style="background: var(--old);"></i>方法 A 均值</span>
+        <span><i class="dot" style="background: var(--new);"></i>方法 B 均值</span>
+      </div>
+      <svg id="meanChart" class="chart" role="img" aria-label="各组距离均值对比图"></svg>
+    </section>
+
+    <section class="card section">
+      <h2>各组重复度对比</h2>
+      <p>这里用同组样本的总体标准差表示重复测量波动，越小越稳定。</p>
+      <div class="legend">
+        <span><i class="dot" style="background: var(--old);"></i>方法 A 标准差</span>
+        <span><i class="dot" style="background: var(--new);"></i>方法 B 标准差</span>
+      </div>
+      <svg id="stdChart" class="chart" role="img" aria-label="各组标准差对比图"></svg>
+    </section>
+
+    <section class="card section">
+      <h2>各组极差对比</h2>
+      <p>极差 = 同组最大值 - 最小值，同样是越小越稳定。</p>
+      <div class="legend">
+        <span><i class="dot" style="background: var(--old);"></i>方法 A 极差</span>
+        <span><i class="dot" style="background: var(--new);"></i>方法 B 极差</span>
+      </div>
+      <svg id="rangeChart" class="chart" role="img" aria-label="各组极差对比图"></svg>
+    </section>
+
+    <section class="card section">
+      <h2>样本散点、均值与极差</h2>
+      <p>
+        这张图用于观察每组内部是否存在明显分段或异常点。灰色点为方法 A，
+        绿色点为方法 B；橙色短横线表示均值，浅色竖线表示该组极差。
+      </p>
+      <div class="legend">
+        <span><i class="dot" style="background: #657286;"></i>方法 A 样本</span>
+        <span><i class="dot" style="background: #087477;"></i>方法 B 样本</span>
+        <span><i class="dot" style="background: var(--delta);"></i>均值线</span>
+      </div>
+      <svg id="scatterRangeChart" class="chart" role="img" aria-label="样本散点均值极差图"></svg>
+    </section>
+
+    <section class="section">
+      <h2>分组统计表</h2>
+      <table id="statsTable">
+        <thead>
+          <tr>
+            <th>组名</th>
+            <th>数量</th>
+            <th>A 均值</th>
+            <th>A 标准差</th>
+            <th>A 极差</th>
+            <th>A 最小</th>
+            <th>A 最大</th>
+            <th>B 均值</th>
+            <th>B 标准差</th>
+            <th>B 极差</th>
+            <th>B 最小</th>
+            <th>B 最大</th>
+            <th>B-A 均值差</th>
+            <th>B-A 标准差差值</th>
+            <th>B-A 极差差值</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script>
+    const SAMPLES = [{"name":"L109D20-01","group":"L109D20","old":266.8424903118479,"new":266.57238624478146},{"name":"L109D20-02","group":"L109D20","old":266.73228344660225,"new":266.4388708999697},{"name":"L109D20-03","group":"L109D20","old":266.5596103650007,"new":266.2469306239642},{"name":"L109D20-04","group":"L109D20","old":266.9778846138444,"new":266.67972911026936},{"name":"L109D20-05","group":"L109D20","old":266.8103814262565,"new":266.5012858664645},{"name":"L109D20-06","group":"L109D20","old":266.7158603080101,"new":266.40199403893143},{"name":"L109D20-07","group":"L109D20","old":266.27788194883226,"new":265.9378276700538},{"name":"L109D20-08","group":"L109D20","old":266.24472275987864,"new":265.89484166730597},{"name":"L109D20-09","group":"L109D20","old":266.1030546441925,"new":265.7639528427832},{"name":"L109D20-10","group":"L109D20","old":266.18833494803533,"new":265.70605640346423},{"name":"L109D20-11","group":"L109D20","old":265.9548575381583,"new":265.4860443565363},{"name":"L109D20-12","group":"L109D20","old":266.9393734849219,"new":266.5863345649447},{"name":"L109D20-v2-01","group":"L109D20-v2","old":264.49440819689767,"new":264.162708823738},{"name":"L109D20-v2-02","group":"L109D20-v2","old":264.2897228955202,"new":264.0735898727226},{"name":"L109D20-v2-03","group":"L109D20-v2","old":264.20518946366127,"new":264.0739190170068},{"name":"L109D20-v2-04","group":"L109D20-v2","old":264.0519618875545,"new":264.0245018376466},{"name":"L109D20-v2-05","group":"L109D20-v2","old":264.13010615584875,"new":264.0723987151434},{"name":"L109D20-v2-06","group":"L109D20-v2","old":264.43635702392334,"new":264.1903431851094},{"name":"L109D20-v2-07","group":"L109D20-v2","old":264.35908576540726,"new":264.1293277553975},{"name":"L109D20-v2-08","group":"L109D20-v2","old":264.2710401312082,"new":264.104024648683},{"name":"L109D20-v2-09","group":"L109D20-v2","old":264.43975611523365,"new":264.1761424334597},{"name":"L109D20-v2-10","group":"L109D20-v2","old":264.83822483105973,"new":264.3682605028209},{"name":"L109D30-01","group":"L109D30","old":267.0819686168761,"new":266.7418991740441},{"name":"L109D30-02","group":"L109D30","old":267.2997689213287,"new":266.9262411927928},{"name":"L109D30-03","group":"L109D30","old":266.6103259054859,"new":266.16121129263973},{"name":"L109D30-04","group":"L109D30","old":266.8668670287129,"new":266.38687059494066},{"name":"L109D30-05","group":"L109D30","old":266.9580811646817,"new":266.4024694452681},{"name":"L109D30-06","group":"L109D30","old":266.80689569981865,"new":266.4297899982755},{"name":"L109D30-07","group":"L109D30","old":267.17929494701184,"new":266.8119054331358},{"name":"L109D30-08","group":"L109D30","old":267.49799529270376,"new":267.10382141615145},{"name":"L109D30-09","group":"L109D30","old":267.31565804148636,"new":266.97644017662407},{"name":"L109D30-10","group":"L109D30","old":267.5208713947806,"new":267.1977648244977},{"name":"L109D30-11","group":"L109D30","old":267.59481482757053,"new":267.21315603203766},{"name":"L109D30-12","group":"L109D30","old":267.5169145677111,"new":267.1361927213572},{"name":"L109D40-01","group":"L109D40","old":267.5660567563283,"new":267.20023200474367},{"name":"L109D40-02","group":"L109D40","old":267.4791500294178,"new":267.11270305229493},{"name":"L109D40-03","group":"L109D40","old":267.5460852868956,"new":267.1693537623398},{"name":"L109D40-04","group":"L109D40","old":267.43605592704415,"new":267.0508070358335},{"name":"L109D40-05","group":"L109D40","old":267.6637974602292,"new":267.26387550619387},{"name":"L109D40-06","group":"L109D40","old":267.6939206825917,"new":267.2919450933003},{"name":"L109D40-07","group":"L109D40","old":267.5669474730083,"new":267.176612543517},{"name":"L109D40-08","group":"L109D40","old":267.54923614539103,"new":267.16011204762594},{"name":"L109D40-09","group":"L109D40","old":267.7070828067744,"new":267.32646016696606},{"name":"L109D40-10","group":"L109D40","old":267.7883965609274,"new":267.3953058777778},{"name":"L109D40-11","group":"L109D40","old":267.50635331535494,"new":266.9824073781092},{"name":"L109D40-12","group":"L109D40","old":267.54188933520487,"new":267.0824159800258},{"name":"L109D40-v2-01","group":"L109D40-v2","old":263.8129611696892,"new":263.49055037221456},{"name":"L109D40-v2-02","group":"L109D40-v2","old":263.98701293418145,"new":263.55143384365374},{"name":"L109D40-v2-03","group":"L109D40-v2","old":263.41551632872023,"new":263.3297621370395},{"name":"L109D40-v2-04","group":"L109D40-v2","old":263.78243759423947,"new":263.46562758416417},{"name":"L109D40-v2-05","group":"L109D40-v2","old":263.97500466824476,"new":263.5882226494603},{"name":"L109D40-v2-06","group":"L109D40-v2","old":263.61817482094364,"new":263.37602989419617},{"name":"L109D40-v2-07","group":"L109D40-v2","old":263.8623161521792,"new":263.5178784767268},{"name":"L109D40-v2-08","group":"L109D40-v2","old":263.4208483258348,"new":263.3491621647948},{"name":"L109D40-v2-09","group":"L109D40-v2","old":263.85739842020007,"new":263.4969121664217},{"name":"L109D40-v2-10","group":"L109D40-v2","old":263.64178360686793,"new":263.43539121704464},{"name":"L109D50-01","group":"L109D50","old":267.4159013271598,"new":266.9860611782546},{"name":"L109D50-02","group":"L109D50","old":267.589981096156,"new":267.1444382322952},{"name":"L109D50-03","group":"L109D50","old":267.5724935734684,"new":267.1233381068982},{"name":"L109D50-04","group":"L109D50","old":267.5540370288083,"new":267.1062106667173},{"name":"L109D50-05","group":"L109D50","old":267.51977899772925,"new":267.07139220954286},{"name":"L109D50-06","group":"L109D50","old":267.49322096896555,"new":267.04539350299314},{"name":"L109D50-07","group":"L109D50","old":267.6324284613564,"new":267.1775186708914},{"name":"L109D50-08","group":"L109D50","old":267.61407901135493,"new":267.16062456779537},{"name":"L109D50-09","group":"L109D50","old":267.52812704734083,"new":267.0633079672073},{"name":"L109D50-10","group":"L109D50","old":267.7024198432407,"new":267.2516800125042},{"name":"L109D50-11","group":"L109D50","old":267.6615483936152,"new":267.2043266331085},{"name":"L109D50-12","group":"L109D50","old":267.5022662151652,"new":267.04499705829016},{"name":"L109D60-01","group":"L109D60","old":268.00262481504274,"new":267.55654551891627},{"name":"L109D60-02","group":"L109D60","old":268.03197092406185,"new":267.5806618749516},{"name":"L109D60-03","group":"L109D60","old":268.1040899593983,"new":267.64473365274677},{"name":"L109D60-04","group":"L109D60","old":268.2004307196133,"new":267.7262221873805},{"name":"L109D60-05","group":"L109D60","old":268.15777624396986,"new":267.67678359268683},{"name":"L109D60-06","group":"L109D60","old":268.0304466005799,"new":267.56312548065426},{"name":"L109D60-07","group":"L109D60","old":267.9711891308486,"new":267.51136889636643},{"name":"L109D60-08","group":"L109D60","old":268.03749576493055,"new":267.58163062802095},{"name":"L109D60-09","group":"L109D60","old":267.93379047515054,"new":267.46987574361776},{"name":"L109D60-10","group":"L109D60","old":267.92048957652133,"new":267.4600628565313},{"name":"L109D60-11","group":"L109D60","old":268.18226572415267,"new":267.72485133834476},{"name":"L109D60-12","group":"L109D60","old":267.96871871017055,"new":267.5124761987164},{"name":"L109D60-v2-01","group":"L109D60-v2","old":262.5874250710322,"new":262.15256369968927},{"name":"L109D60-v2-02","group":"L109D60-v2","old":262.7071327622716,"new":262.2198068579986},{"name":"L109D60-v2-03","group":"L109D60-v2","old":262.45962243747863,"new":262.0683176420278},{"name":"L109D60-v2-04","group":"L109D60-v2","old":262.6661293680096,"new":262.2234921974335},{"name":"L109D60-v2-05","group":"L109D60-v2","old":262.450820857775,"new":262.09508664712826},{"name":"L109D60-v2-06","group":"L109D60-v2","old":262.6165348355641,"new":262.19728660346163},{"name":"L109D60-v2-07","group":"L109D60-v2","old":262.46347741751345,"new":262.08718621715576},{"name":"L109D60-v2-08","group":"L109D60-v2","old":262.6897438923996,"new":262.2070426593375},{"name":"L109D60-v2-09","group":"L109D60-v2","old":262.250057501353,"new":262.00968641698194},{"name":"L109D60-v2-10","group":"L109D60-v2","old":262.61380451397866,"new":262.1750862857244},{"name":"L109D70-01","group":"L109D70","old":268.59130675136026,"new":268.13812074305844},{"name":"L109D70-02","group":"L109D70","old":268.6030131636756,"new":268.14887492910003},{"name":"L109D70-03","group":"L109D70","old":268.7752885557784,"new":268.30221884092566},{"name":"L109D70-04","group":"L109D70","old":268.62566098978766,"new":268.17739859722195},{"name":"L109D70-05","group":"L109D70","old":268.721060826228,"new":268.2697231885415},{"name":"L109D70-06","group":"L109D70","old":268.6111947695484,"new":268.17025511475686},{"name":"L109D70-07","group":"L109D70","old":268.5487094450537,"new":268.1112225955576},{"name":"L109D70-08","group":"L109D70","old":268.7011543385459,"new":268.25144448578436},{"name":"L109D70-09","group":"L109D70","old":268.8021396388278,"new":268.33781709630534},{"name":"L109D70-10","group":"L109D70","old":268.58657119162126,"new":268.12435906874816},{"name":"L109D70-11","group":"L109D70","old":268.5785227647674,"new":268.15085452309086},{"name":"L109D70-12","group":"L109D70","old":268.5897898252156,"new":268.15763750680867},{"name":"L109D70-13","group":"L109D70","old":268.91613230460285,"new":268.4438476282971},{"name":"L109D70-14","group":"L109D70","old":269.1419559071235,"new":268.6546227223865},{"name":"L174D20-01","group":"L174D20","old":266.9515458675498,"new":266.60387427112187},{"name":"L174D20-02","group":"L174D20","old":267.42242283472586,"new":267.0280687973247},{"name":"L174D20-03","group":"L174D20","old":267.5704617442581,"new":267.1677420686836},{"name":"L174D20-04","group":"L174D20","old":266.9888045578467,"new":266.636944549168},{"name":"L174D20-05","group":"L174D20","old":267.2677032958951,"new":266.9038586065427},{"name":"L174D20-06","group":"L174D20","old":267.38053669211854,"new":267.0129339786153},{"name":"L174D20-07","group":"L174D20","old":267.320614543723,"new":266.9561686673329},{"name":"L174D20-08","group":"L174D20","old":267.22306369415674,"new":266.871727257607},{"name":"L174D20-09","group":"L174D20","old":267.15396605996256,"new":266.82878951624355},{"name":"L174D20-10","group":"L174D20","old":266.9455522765667,"new":266.62199113617623},{"name":"L174D20-11","group":"L174D20","old":267.28852433358537,"new":266.9437945815828},{"name":"L174D20-12","group":"L174D20","old":267.3384673506391,"new":266.9687485941906},{"name":"L174D20-13","group":"L174D20","old":266.9130428222638,"new":266.601673225563},{"name":"L174D30-01","group":"L174D30","old":268.3876980664259,"new":267.9699968107112},{"name":"L174D30-02","group":"L174D30","old":268.3608850729361,"new":267.9413631883686},{"name":"L174D30-03","group":"L174D30","old":268.3754330653881,"new":267.96586966701443},{"name":"L174D30-04","group":"L174D30","old":268.2362306291557,"new":267.8342395166437},{"name":"L174D30-05","group":"L174D30","old":268.0913452455408,"new":267.6953410862364},{"name":"L174D30-06","group":"L174D30","old":268.02159418428346,"new":267.6395588160591},{"name":"L174D30-07","group":"L174D30","old":268.42890761417334,"new":268.03643922591937},{"name":"L174D30-08","group":"L174D30","old":268.24790650203033,"new":267.84958729616835},{"name":"L174D30-09","group":"L174D30","old":268.18864284304567,"new":267.79062873688184},{"name":"L174D30-10","group":"L174D30","old":268.0502014737774,"new":267.6403004894204},{"name":"L174D30-11","group":"L174D30","old":267.8356197723698,"new":267.4278779382137},{"name":"L174D30-12","group":"L174D30","old":268.0526868495878,"new":267.6696315027847},{"name":"L174D30-13","group":"L174D30","old":268.08803161023144,"new":267.69074759449086},{"name":"L174D40-01","group":"L174D40","old":270.14428657894484,"new":269.61719072894823},{"name":"L174D40-02","group":"L174D40","old":269.85122730189966,"new":269.3179263186367},{"name":"L174D40-03","group":"L174D40","old":270.15633218610554,"new":269.6300045758075},{"name":"L174D40-04","group":"L174D40","old":269.9362918528809,"new":269.4002212212291},{"name":"L174D40-05","group":"L174D40","old":269.8846838132334,"new":269.3232335220911},{"name":"L174D40-06","group":"L174D40","old":269.72751849702917,"new":269.1751041254056},{"name":"L174D40-07","group":"L174D40","old":269.88398996782075,"new":269.30196126527517},{"name":"L174D40-08","group":"L174D40","old":270.09076215575385,"new":269.4845850949443},{"name":"L174D40-09","group":"L174D40","old":269.6401031752868,"new":269.0194869139142},{"name":"L174D40-10","group":"L174D40","old":269.66404112665765,"new":269.05104493200986},{"name":"L174D40-11","group":"L174D40","old":269.9292773399588,"new":269.3503129051048},{"name":"L174D40-12","group":"L174D40","old":269.960035414413,"new":269.3643398664369},{"name":"L174D50-01","group":"L174D50","old":269.4496064876689,"new":268.7532146113525},{"name":"L174D50-02","group":"L174D50","old":269.48692741483654,"new":268.74271347988775},{"name":"L174D50-03","group":"L174D50","old":269.4194300215996,"new":268.6971911146395},{"name":"L174D50-04","group":"L174D50","old":270.1052966956765,"new":269.3821018158079},{"name":"L174D50-05","group":"L174D50","old":270.2610870484478,"new":269.5413300261775},{"name":"L174D50-06","group":"L174D50","old":270.4089982991049,"new":269.7519705310472},{"name":"L174D50-07","group":"L174D50","old":271.04830277242064,"new":270.64593069566456},{"name":"L174D50-08","group":"L174D50","old":271.6681583956134,"new":271.17995274561093},{"name":"L174D50-09","group":"L174D50","old":272.03675550091896,"new":271.5403169742664},{"name":"L174D50-10","group":"L174D50","old":270.5107761699417,"new":269.9610241192464},{"name":"L174D50-11","group":"L174D50","old":271.3820013829357,"new":271.0425317982599},{"name":"L174D50-12","group":"L174D50","old":271.2470550710769,"new":271.1303076871899},{"name":"L174D60-01","group":"L174D60","old":269.2033119352059,"new":268.8105598701263},{"name":"L174D60-02","group":"L174D60","old":269.4262768368705,"new":269.0311702731883},{"name":"L174D60-03","group":"L174D60","old":269.64491879496825,"new":269.25892992413367},{"name":"L174D60-04","group":"L174D60","old":269.87616600478987,"new":269.48819161991145},{"name":"L174D60-05","group":"L174D60","old":269.87672587825614,"new":269.4882049950786},{"name":"L174D60-06","group":"L174D60","old":269.56240523041424,"new":269.1781618020644},{"name":"L174D60-07","group":"L174D60","old":269.699391030367,"new":269.30573571954767},{"name":"L174D60-08","group":"L174D60","old":269.36291074550553,"new":268.9853108446825},{"name":"L174D60-09","group":"L174D60","old":268.9500351525727,"new":268.61601572306665},{"name":"L174D60-10","group":"L174D60","old":269.01543435616185,"new":268.6344086472406},{"name":"L174D60-11","group":"L174D60","old":269.03650335430217,"new":268.6230395119679},{"name":"L174D60-12","group":"L174D60","old":269.19464943568397,"new":268.8068145749132},{"name":"L174D70-01","group":"L174D70","old":269.4494660682752,"new":269.08808421222335},{"name":"L174D70-02","group":"L174D70","old":269.55720097533634,"new":269.2281632994669},{"name":"L174D70-03","group":"L174D70","old":270.04515429129333,"new":269.7129030140694},{"name":"L174D70-04","group":"L174D70","old":270.01738868370217,"new":269.68188241789744},{"name":"L174D70-05","group":"L174D70","old":270.0754213072396,"new":269.75669989536686},{"name":"L174D70-06","group":"L174D70","old":270.4636940537997,"new":270.1537020712496},{"name":"L174D70-07","group":"L174D70","old":270.47771095360724,"new":270.1648419534019},{"name":"L174D70-08","group":"L174D70","old":270.51316305757774,"new":270.191094846437},{"name":"L174D70-09","group":"L174D70","old":270.7907427643583,"new":270.4640820219676},{"name":"L174D70-10","group":"L174D70","old":270.8011962601652,"new":270.47051091124325},{"name":"L174D70-11","group":"L174D70","old":270.76384173523456,"new":270.44697020701574},{"name":"L174D70-12","group":"L174D70","old":270.39360383072676,"new":270.07278444275835}];
+
+    const GROUPS = [
+      {"group":"L109D20","count":12,"old_mean":266.52889464963175,"old_std":0.3410191572206769,"old_min":265.9548575381583,"old_max":266.9778846138444,"new_mean":266.18468785745574,"new_std":0.3885651966772587,"new_min":265.4860443565363,"new_max":266.67972911026936,"delta_mean":-0.3442067921759957},
+      {"group":"L109D20-v2","count":10,"old_mean":264.3515852466315,"old_std":0.2104296629912145,"old_min":264.0519618875545,"old_max":264.83822483105973,"new_mean":264.1375216791728,"new_std":0.09191992282012947,"new_min":264.0245018376466,"new_max":264.3682605028209,"delta_mean":-0.2140635674586747},
+      {"group":"L109D30","count":12,"old_mean":267.1874547006807,"old_std":0.3103256593465362,"old_min":266.6103259054859,"old_max":267.59481482757053,"new_mean":266.7906468584804,"new_std":0.3485202422917242,"new_min":266.16121129263973,"new_max":267.21315603203766,"delta_mean":-0.39680784220028426},
+      {"group":"L109D40","count":12,"old_mean":267.5870809815973,"old_std":0.0996684895452074,"old_min":267.43605592704415,"old_max":267.7883965609274,"new_mean":267.184352537394,"new_std":0.11469580754810955,"new_min":266.9824073781092,"new_max":267.3953058777778,"delta_mean":-0.4027284442033192},
+      {"group":"L109D40-v2","count":10,"old_mean":263.73734540211007,"old_std":0.19587631425684318,"old_min":263.41551632872023,"old_max":263.98701293418145,"new_mean":263.4600970505716,"new_std":0.08208655187341099,"new_min":263.3297621370395,"new_max":263.5882226494603,"delta_mean":-0.27724835153843513},
+      {"group":"L109D50","count":12,"old_mean":267.56552349703003,"old_std":0.07674686981750334,"old_min":267.4159013271598,"old_max":267.7024198432407,"new_mean":267.11494073387485,"new_std":0.0733760883189363,"new_min":266.9860611782546,"new_max":267.2516800125042,"delta_mean":-0.45058276315519663},
+      {"group":"L109D60","count":12,"old_mean":268.0451073870367,"old_std":0.09155206415032809,"old_min":267.92048957652133,"old_max":268.2004307196133,"new_mean":267.58402816407784,"new_std":0.08772378815968689,"new_min":267.4600628565313,"new_max":267.7262221873805,"delta_mean":-0.4610792229588678},
+      {"group":"L109D60-v2","count":10,"old_mean":262.55047486573756,"old_std":0.13529879441650788,"old_min":262.250057501353,"old_max":262.7071327622716,"new_mean":262.1435555226939,"new_std":0.07021789415142231,"new_min":262.00968641698194,"new_max":262.2234921974335,"delta_mean":-0.4069193430437224},
+      {"group":"L109D70","count":14,"old_mean":268.69946431943833,"old_std":0.15943453581326233,"old_min":268.5487094450537,"old_max":269.1419559071235,"new_mean":268.24559978861305,"new_std":0.14629570121520033,"new_min":268.1112225955576,"new_max":268.6546227223865,"delta_mean":-0.45386453082523254},
+      {"group":"L174D20","count":13,"old_mean":267.2126696979455,"old_std":0.19989112532489334,"old_min":266.9130428222638,"old_max":267.5704617442581,"new_mean":266.85740886539634,"new_std":0.17891129899558336,"new_min":266.601673225563,"new_max":267.1677420686836,"delta_mean":-0.3552608325491677},
+      {"group":"L174D30","count":13,"old_mean":268.1819371483805,"old_std":0.1702645818234053,"old_min":267.8356197723698,"old_max":268.42890761417334,"new_mean":267.7808909129933,"new_std":0.16661249363463293,"new_min":267.4278779382137,"new_max":268.03643922591937,"delta_mean":-0.40104623538717565},
+      {"group":"L174D40","count":12,"old_mean":269.905712450832,"old_std":0.1640634405963689,"old_min":269.6401031752868,"old_max":270.15633218610554,"new_mean":269.3362842891503,"new_std":0.18294615169782324,"new_min":269.0194869139142,"new_max":269.6300045758075,"delta_mean":-0.5694281616817468},
+      {"group":"L174D50","count":12,"old_mean":270.5853662716868,"old_std":0.8560548052820312,"old_min":269.4194300215996,"old_max":272.03675550091896,"new_mean":270.0307154665959,"new_std":1.0009581370106329,"new_min":268.6971911146395,"new_max":271.5403169742664,"delta_mean":-0.5546508050909201},
+      {"group":"L174D60","count":12,"old_mean":269.4040607295915,"old_std":0.3155959258165953,"old_min":268.9500351525727,"old_max":269.87672587825614,"new_mean":269.0188786254934,"new_std":0.31121465109420166,"new_min":268.61601572306665,"new_max":269.4882049950786,"delta_mean":-0.38518210409807335},
+      {"group":"L174D70","count":12,"old_mean":270.27904866510966,"old_std":0.4363574928965029,"old_min":269.4494660682752,"old_max":270.8011962601652,"new_mean":269.9526432744248,"new_std":0.4446324153640573,"new_min":269.08808421222335,"new_max":270.47051091124325,"delta_mean":-0.32640539068489716}
+    ];
+
+    const TOTAL = {
+      matched: 178,
+      oldMean: 267.60323278998607,
+      newMean: 267.1995178110528,
+      deltaMean: -0.40371497893329017,
+      deltaMin: -0.7442139349487888,
+      deltaMax: -0.027460049907915618
+    };
+
+    const fmt = (value, digits = 3) => Number(value).toFixed(digits);
+
+    const groupMetrics = GROUPS.map((row) => {
+      const oldRange = row.old_max - row.old_min;
+      const newRange = row.new_max - row.new_min;
+      return {
+        ...row,
+        old_range: oldRange,
+        new_range: newRange,
+        delta_std: row.new_std - row.old_std,
+        delta_range: newRange - oldRange
+      };
+    });
+
+    const mean = (values) => values.reduce((sum, value) => sum + value, 0) / values.length;
+
+    const STABILITY = {
+      stdBetter: groupMetrics.filter((row) => row.delta_std < 0).length,
+      rangeBetter: groupMetrics.filter((row) => row.delta_range < 0).length,
+      meanStdDelta: mean(groupMetrics.map((row) => row.delta_std)),
+      meanRangeDelta: mean(groupMetrics.map((row) => row.delta_range))
+    };
+
+    function renderSummary() {
+      const items = [
+        ["匹配样本", TOTAL.matched],
+        ["B-A 平均差", `${fmt(TOTAL.deltaMean)} mm`],
+        ["B 标准差更小", `${STABILITY.stdBetter} / ${GROUPS.length} 组`],
+        ["B 极差更小", `${STABILITY.rangeBetter} / ${GROUPS.length} 组`],
+        ["平均标准差差值", `${fmt(STABILITY.meanStdDelta)} mm`],
+        ["平均极差差值", `${fmt(STABILITY.meanRangeDelta)} mm`]
+      ];
+      document.querySelector("#summary").innerHTML = items.map(([label, value]) => `
+        <div class="stat">
+          <div class="label">${label}</div>
+          <div class="value">${value}</div>
+        </div>
+      `).join("");
+    }
+
+    function renderTable() {
+      document.querySelector("#statsTable tbody").innerHTML = groupMetrics.map((row) => `
+        <tr>
+          <td>${row.group}</td>
+          <td>${row.count}</td>
+          <td>${fmt(row.old_mean)}</td>
+          <td>${fmt(row.old_std)}</td>
+          <td>${fmt(row.old_range)}</td>
+          <td>${fmt(row.old_min)}</td>
+          <td>${fmt(row.old_max)}</td>
+          <td>${fmt(row.new_mean)}</td>
+          <td>${fmt(row.new_std)}</td>
+          <td>${fmt(row.new_range)}</td>
+          <td>${fmt(row.new_min)}</td>
+          <td>${fmt(row.new_max)}</td>
+          <td>${fmt(row.delta_mean)}</td>
+          <td>${fmt(row.delta_std)}</td>
+          <td>${fmt(row.delta_range)}</td>
+        </tr>
+      `).join("");
+    }
+
+    function renderBarChart(svgId, oldKey, newKey, unit) {
+      const svg = document.getElementById(svgId);
+      const width = 1180;
+      const height = 430;
+      const left = 95;
+      const right = 20;
+      const top = 28;
+      const bottom = 96;
+      const plotW = width - left - right;
+      const plotH = height - top - bottom;
+      const values = groupMetrics.flatMap((row) => [row[oldKey], row[newKey]]);
+      const minValue = Math.min(...values);
+      const maxValue = Math.max(...values);
+      const pad = (maxValue - minValue) * 0.08 || 1;
+      const yMin = Math.max(0, minValue - pad);
+      const yMax = maxValue + pad;
+      const y = (value) => top + (yMax - value) / (yMax - yMin) * plotH;
+      const groupW = plotW / groupMetrics.length;
+      const barW = Math.max(8, groupW * 0.26);
+      let html = `<svg viewBox="0 0 ${width} ${height}" width="100%" height="100%">`;
+
+      for (let i = 0; i <= 4; i += 1) {
+        const value = yMin + (yMax - yMin) * i / 4;
+        const yy = y(value);
+        html += `<line x1="${left}" y1="${yy}" x2="${width - right}" y2="${yy}" stroke="#e5e7ef" />`;
+        html += `<text x="${left - 10}" y="${yy + 4}" text-anchor="end" font-size="12" fill="#6b7280">${fmt(value, unit === "mm" ? 1 : 2)}</text>`;
+      }
+
+      groupMetrics.forEach((row, index) => {
+        const cx = left + groupW * index + groupW / 2;
+        const oldH = top + plotH - y(row[oldKey]);
+        const newH = top + plotH - y(row[newKey]);
+        html += `<rect x="${cx - barW - 2}" y="${y(row[oldKey])}" width="${barW}" height="${oldH}" rx="3" fill="var(--old)" />`;
+        html += `<rect x="${cx + 2}" y="${y(row[newKey])}" width="${barW}" height="${newH}" rx="3" fill="var(--new)" />`;
+        html += `<text x="${cx}" y="${height - 66}" text-anchor="end" transform="rotate(-45 ${cx} ${height - 66})" font-size="12" fill="#374151">${row.group}</text>`;
+      });
+
+      html += `<line x1="${left}" y1="${top + plotH}" x2="${width - right}" y2="${top + plotH}" stroke="#9ca3af" />`;
+      html += `<text x="${left}" y="18" font-size="12" fill="#6b7280">单位：${unit}</text>`;
+      html += "</svg>";
+      svg.outerHTML = html;
+    }
+
+    function renderScatterRangeChart() {
+      const svg = document.getElementById("scatterRangeChart");
+      const width = 1180;
+      const height = 470;
+      const left = 86;
+      const right = 22;
+      const top = 30;
+      const bottom = 104;
+      const plotW = width - left - right;
+      const plotH = height - top - bottom;
+      const values = SAMPLES.flatMap((row) => [row.old, row.new]);
+      const minValue = Math.min(...values);
+      const maxValue = Math.max(...values);
+      const yMin = minValue - 0.35;
+      const yMax = maxValue + 0.35;
+      const y = (value) => top + (yMax - value) / (yMax - yMin) * plotH;
+      const groups = groupMetrics.map((row) => row.group);
+      const groupW = plotW / groups.length;
+      let html = `<svg viewBox="0 0 ${width} ${height}" width="100%" height="100%">`;
+
+      for (let i = 0; i <= 6; i += 1) {
+        const value = yMin + (yMax - yMin) * i / 6;
+        const yy = y(value);
+        html += `<line x1="${left}" y1="${yy}" x2="${width - right}" y2="${yy}" stroke="#e5e7ef" />`;
+        html += `<text x="${left - 10}" y="${yy + 4}" text-anchor="end" font-size="12" fill="#6b7280">${fmt(value, 1)}</text>`;
+      }
+
+      groups.forEach((group, index) => {
+        const cx = left + groupW * index + groupW / 2;
+        const rows = SAMPLES.filter((row) => row.group === group);
+        const oldValues = rows.map((row) => row.old);
+        const newValues = rows.map((row) => row.new);
+        const oldMean = mean(oldValues);
+        const newMean = mean(newValues);
+        const oldX = cx - groupW * 0.18;
+        const newX = cx + groupW * 0.18;
+        const jitter = Math.min(18, groupW * 0.12);
+        const meanLine = Math.min(34, groupW * 0.18);
+
+        html += `<line x1="${oldX}" y1="${y(Math.min(...oldValues))}" x2="${oldX}" y2="${y(Math.max(...oldValues))}" stroke="#d9dee8" stroke-width="7" stroke-linecap="round" opacity="0.75" />`;
+        html += `<line x1="${newX}" y1="${y(Math.min(...newValues))}" x2="${newX}" y2="${y(Math.max(...newValues))}" stroke="#cfe9ea" stroke-width="7" stroke-linecap="round" opacity="0.85" />`;
+        html += `<line x1="${oldX - meanLine / 2}" y1="${y(oldMean)}" x2="${oldX + meanLine / 2}" y2="${y(oldMean)}" stroke="var(--delta)" stroke-width="4" stroke-linecap="round" />`;
+        html += `<line x1="${newX - meanLine / 2}" y1="${y(newMean)}" x2="${newX + meanLine / 2}" y2="${y(newMean)}" stroke="var(--delta)" stroke-width="4" stroke-linecap="round" />`;
+
+        rows.forEach((row, sampleIndex) => {
+          const phase = sampleIndex % 7 - 3;
+          const wave = sampleIndex % 2 === 0 ? 0.45 : -0.45;
+          const dx = (phase / 3) * jitter + wave * 2;
+          html += `<circle cx="${oldX + dx}" cy="${y(row.old)}" r="5.5" fill="#657286" opacity="0.95"><title>${row.name} A ${fmt(row.old)}</title></circle>`;
+          html += `<circle cx="${newX + dx}" cy="${y(row.new)}" r="5.5" fill="#087477" opacity="0.95"><title>${row.name} B ${fmt(row.new)}</title></circle>`;
+        });
+
+        html += `<text x="${cx}" y="${height - 66}" text-anchor="end" transform="rotate(-45 ${cx} ${height - 66})" font-size="12" fill="#374151">${group}</text>`;
+        html += `<text x="${oldX}" y="${height - 30}" text-anchor="middle" font-size="10" fill="#657286">A</text>`;
+        html += `<text x="${newX}" y="${height - 30}" text-anchor="middle" font-size="10" fill="#087477">B</text>`;
+      });
+
+      html += `<line x1="${left}" y1="${top + plotH}" x2="${width - right}" y2="${top + plotH}" stroke="#9ca3af" />`;
+      html += `<text x="${left}" y="18" font-size="12" fill="#6b7280">距离 / mm</text>`;
+      html += "</svg>";
+      svg.outerHTML = html;
+    }
+
+    renderSummary();
+    renderTable();
+    renderBarChart("meanChart", "old_mean", "new_mean", "mm");
+    renderBarChart("stdChart", "old_std", "new_std", "mm");
+    renderBarChart("rangeChart", "old_range", "new_range", "mm");
+    renderScatterRangeChart();
+  </script>
+</body>
+</html>

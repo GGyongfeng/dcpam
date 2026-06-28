@@ -4,13 +4,27 @@ import { TrackballControls } from "three/examples/jsm/controls/TrackballControls
 
 import { COLORS, planeColor, pointFromRow, toVector3 } from "./geometry.js";
 
+const DEVICE_DARK_COLOR = 0x4f5661;
+const VIEW_FRAME_COLOR = 0x1f5a78;
+const CAMERA_MODEL_SCALE = 2.35;
+const DEVICE_LAYER_KEYS = [
+  "frontViewFrame",
+  "rearViewFrame",
+  "frontFrostedGlass",
+  "rearFrostedGlass",
+  "frontReflectionMirror",
+  "rearReflectionMirror",
+  "basePlate",
+  "probeRod",
+];
+
 export function SceneView({ rows, geometry, layers }) {
   const mountRef = useRef(null);
   const axesRef = useRef(null);
   const layersRef = useRef(layers);
   const sceneRef = useRef(null);
   const [inspection, setInspection] = useState(null);
-  const [viewDirection, setViewDirection] = useState({ x: 0, y: 0, z: 0 });
+  const [cameraPosition, setCameraPosition] = useState({ x: 0, y: 0, z: 0 });
 
   useEffect(() => {
     layersRef.current = layers;
@@ -84,9 +98,9 @@ export function SceneView({ rows, geometry, layers }) {
       if (!active) return;
       controls.update();
       renderer.render(scene, camera);
-      renderAxesView(axes, camera);
+      renderAxesView(axes, camera, sceneRef.current?.geometry);
       if (frameIndex % 8 === 0) {
-        setViewDirection(directionFromCamera(camera, controls));
+        setCameraPosition({ x: camera.position.x, y: camera.position.y, z: camera.position.z });
       }
       frameIndex += 1;
       requestAnimationFrame(animate);
@@ -111,13 +125,14 @@ export function SceneView({ rows, geometry, layers }) {
     if (!context) return;
     clearGroup(context.root);
     buildScene(context.root, rows, geometry, layers);
+    context.geometry = geometry;
   }, [rows, geometry, layers]);
 
   useEffect(() => {
     const context = sceneRef.current;
     if (!context) return;
-    fitCamera(context.camera, context.controls, rows, geometry, context.mount);
-  }, [rows, geometry]);
+    fitCamera(context.camera, context.controls, geometry, context.mount);
+  }, [geometry]);
 
   const setMainView = () => {
     const context = sceneRef.current;
@@ -139,7 +154,7 @@ export function SceneView({ rows, geometry, layers }) {
           <button type="button" onClick={setTopView}>正视图</button>
         </div>
         <div ref={axesRef} className="axes-mount" />
-        <div className="view-direction">视向 {formatPoint(viewDirection)}</div>
+        <div className="view-direction">camera.position {formatPoint(cameraPosition)}</div>
       </div>
       <InspectionPanel info={inspection} />
     </div>
@@ -147,73 +162,106 @@ export function SceneView({ rows, geometry, layers }) {
 }
 
 function buildScene(root, rows, geometry, layers) {
+  const deviceVisible = hasVisibleDeviceLayer(layers);
   if (geometry) {
     geometry.planes.forEach((plane) => {
       if (plane.kind === "image" && !layers.imagePlanes) return;
       if (plane.kind === "reflection" && !layers.reflectionPlanes) return;
       if (plane.kind === "virtual" && !layers.virtualPlanes) return;
       root.add(planeMesh(plane));
-      if (layers.labels) root.add(labelSprite(plane.label, plane.point, planeColor(plane.kind)));
+      if (layers.labels) root.add(labelSprite(plane.label, plane.point, deviceVisible));
     });
     if (layers.cameras) {
       geometry.cameras.forEach((camera) => {
         root.add(cameraMesh(camera));
-        if (layers.labels) root.add(labelSprite(camera.name, camera.position, camera.color));
+        if (layers.labels) root.add(labelSprite(camera.name, camera.position, deviceVisible));
       });
     }
-    if (layers.deviceModel) {
-      const device = deviceModelMesh(geometry);
+    if (layers.localAxes) {
+      (geometry.coordinateFrames || []).forEach((frame) => {
+        root.add(coordinateFrameMesh(frame));
+        if (layers.labels) root.add(labelSprite(frame.name, frame.origin, deviceVisible));
+      });
+    }
+    if (deviceVisible) {
+      const device = deviceModelMesh(geometry, layers);
       if (device) root.add(device);
     }
     if (layers.opticalAxes) {
       (geometry.opticalAxes || []).forEach((axis) => {
         root.add(opticalAxisMesh(axis));
-        if (layers.labels) root.add(labelSprite(axis.label, axis.end, axis.color));
-      });
-    }
-    if (layers.frames) {
-      geometry.frames.forEach((frame) => {
-        root.add(frameMesh(frame));
-        if (layers.labels) root.add(labelSprite(frame.label, frame.origin, COLORS.frame));
+        if (layers.labels) root.add(labelSprite(axis.label, axis.end, deviceVisible));
       });
     }
   }
 
   rows.forEach((row) => {
-    const frontVirtual = pointFromRow(row, "front_virtual", "cf");
-    const rearVirtual = pointFromRow(row, "rear_virtual", "cf");
+    const frontVirtual = displayPointFromRow(row, "front_virtual", "cf", geometry);
+    const rearVirtual = displayPointFromRow(row, "rear_virtual", "cr", geometry);
     if (layers.frontVirtual && frontVirtual) {
-      addPoint(root, frontVirtual, COLORS.frontVirtual, 0.72, pointInfo("前虚像点", "虚像点", frontVirtual, row.name));
+      addPoint(root, frontVirtual, COLORS.frontVirtual, 0.72, pointInfo("前虚像点", "虚像点", frontVirtual, row.name, "C1 显示坐标系：由设备坐标系经前取景框 PnP 对齐得到"));
     }
     if (layers.rearVirtual && rearVirtual) {
-      addPoint(root, rearVirtual, COLORS.rearVirtual, 0.72, pointInfo("后虚像点", "虚像点", rearVirtual, row.name));
+      addPoint(root, rearVirtual, COLORS.rearVirtual, 0.72, pointInfo("后虚像点", "虚像点", rearVirtual, row.name, "C1 显示坐标系：由设备坐标系经前取景框 PnP 对齐得到"));
     }
     if (layers.realPoints) {
-      const frontReal = pointFromRow(row, "front_real", "cf");
-      const rearReal = pointFromRow(row, "rear_real", "cr");
+      const frontReal = displayPointFromRow(row, "front_real", "cf", geometry);
+      const rearReal = displayPointFromRow(row, "rear_real", "cr", geometry);
       if (frontReal) {
-        addPoint(root, frontReal, COLORS.real, 0.42, pointInfo("前实像点", "实像点", frontReal, row.name));
+        addPoint(root, frontReal, COLORS.real, 0.42, pointInfo("前实像点", "实像点", frontReal, row.name, "C1 显示坐标系"));
       }
       if (rearReal) {
-        addPoint(root, rearReal, 0x8a96a8, 0.42, pointInfo("后实像点", "实像点", rearReal, row.name));
+        addPoint(root, rearReal, 0x8a96a8, 0.42, pointInfo("后实像点", "实像点", rearReal, row.name, "C1 显示坐标系"));
       }
     }
     if (layers.laserLines && frontVirtual && rearVirtual) {
-      root.add(lineMesh(frontVirtual, rearVirtual, 0x8995a8, {
+      root.add(laserLineMesh(frontVirtual, rearVirtual, {
         name: row.name,
-        type: "激光点连线",
+        type: "激光线",
+        coordinateSystem: "C1 显示坐标系",
         position: midpoint(frontVirtual, rearVirtual),
+        details: [
+          `前端点：${formatPoint(frontVirtual)}，来自前虚像点`,
+          `后端点：${formatPoint(rearVirtual)}，来自后虚像点`,
+          "说明：红色线段为显示用激光线，沿前/后虚像点连线方向延长穿过画面。",
+        ],
       }));
     }
   });
+}
+
+function hasVisibleDeviceLayer(layers) {
+  return DEVICE_LAYER_KEYS.some((key) => layers[key]);
 }
 
 function addPoint(root, point, color, radius, info) {
   root.add(pointMesh(point, color, radius, info));
 }
 
-function pointInfo(name, type, position, sampleName) {
+function rearDisplayPointFromRow(row, prefix, geometry) {
+  const point = pointFromRow(row, prefix, "cr");
+  const transform = geometry?.rearCameraDisplayTransform?.transformPoint;
+  return point && transform ? toPointFromArray(transform([point.x, point.y, point.z])) : null;
+}
+
+function displayPointFromRow(row, prefix, cameraSuffix, geometry) {
+  const point = pointFromRow(row, prefix, cameraSuffix);
+  if (!point) return null;
+  if (point.space === "device") {
+    const transform = geometry?.deviceAlignment?.transformPoint;
+    return transform ? toPointFromArray(transform([point.x, point.y, point.z])) : { x: point.x, y: point.y, z: point.z };
+  }
+  if (point.space === "camera_rear") {
+    const transform = geometry?.rearCameraDisplayTransform?.transformPoint;
+    return transform ? toPointFromArray(transform([point.x, point.y, point.z])) : { x: point.x, y: point.y, z: point.z };
+  }
+  return { x: point.x, y: point.y, z: point.z };
+}
+
+function pointInfo(name, type, position, sampleName, coordinateSystem) {
   return {
+    coordinateSystem,
+    details: [`位置：${formatPoint(position)}，${coordinateSystem}`],
     name,
     type,
     sampleName,
@@ -254,10 +302,32 @@ function planeMesh(plane) {
   group.add(mesh);
   group.add(edges);
   return withPickInfo(group, {
+    coordinateSystem: "C1 显示坐标系",
     name: plane.label,
     type: planeTypeName(plane.kind),
     position: plane.point,
+    details: planeDetails(plane),
   });
+}
+
+function planeDetails(plane) {
+  const details = [
+    `平面参考点：${formatPoint(plane.point)}，C1 显示坐标系`,
+    `法向量：${formatPoint(plane.normal)}，C1 显示坐标系中的方向向量`,
+  ];
+  if (Number.isFinite(plane.d)) {
+    details.push(`平面方程：${planeEquation(plane.normal, plane.d)}`);
+  }
+  if (plane.method) {
+    details.push(`来源：${methodName(plane.method)}`);
+  }
+  if (Number.isFinite(plane.width) && Number.isFinite(plane.height)) {
+    details.push(`尺寸：X=${formatNumber(plane.width)}mm，Y=${formatNumber(plane.height)}mm`);
+  }
+  if (Number.isFinite(plane.reprojectionErrorPx)) {
+    details.push(`PnP 重投影误差：${formatNumber(plane.reprojectionErrorPx)}px`);
+  }
+  return details;
 }
 
 function frameMesh(frame) {
@@ -283,66 +353,129 @@ function frameMesh(frame) {
   group.add(face);
   group.add(outline);
   group.add(pointMesh(frame.origin, COLORS.frame, 0.45));
-  group.add(frameAxis(frame.origin, frame.axes.x, 0xd97706, 5.0));
-  group.add(frameAxis(frame.origin, frame.axes.y, 0x6b7280, 4.0));
-  group.add(frameAxis(frame.origin, frame.axes.z, 0x111114, 4.0));
+  group.add(surfaceAxes(frame.origin, frame.axes, 5.0));
   return withPickInfo(group, {
+    coordinateSystem: "C1 显示坐标系",
     name: frame.label,
-    type: "取景框",
+    type: "PnP 实像面",
     position: frame.origin,
+    details: frameSurfaceDetails(frame),
   });
 }
 
-function deviceModelMesh(geometry) {
-  const frontFrame = geometry.frames.find((frame) => frame.label === "front frame");
-  const rearFrame = geometry.frames.find((frame) => frame.label === "rear frame");
-  if (!frontFrame || !rearFrame) return null;
-
+function surfaceAxes(origin, axes, length) {
   const group = new THREE.Group();
-  group.add(viewFrameAssembly(0, 0x5aaee8, "前取景框"));
-  group.add(viewFrameAssembly(80, 0x4f5661, "后取景框"));
-  group.add(frostedGlassAssembly(0, "前毛玻璃片"));
-  group.add(frostedGlassAssembly(80, "后毛玻璃片"));
-  group.add(reflectionMirrorAssembly(0, 0x8c7f93, "前反射镜"));
-  group.add(reflectionMirrorAssembly(80, 0x756f7d, "后反射镜"));
-  group.add(basePlateMesh());
-  group.add(probeRodMesh());
+  group.add(frameAxis(origin, axes.x, 0xd97706, length));
+  group.add(frameAxis(origin, axes.y, 0x6b7280, length * 0.8));
+  group.add(frameAxis(origin, axes.z, 0x111114, length * 0.8));
   return group;
 }
 
-function viewFrameAssembly(xCenter, color, name) {
+function coordinateFrameMesh(frame) {
+  const group = surfaceAxes(frame.origin, frame.axes, frame.length || 8);
+  group.add(pointMesh(frame.origin, 0x111114, 0.35));
+  return withPickInfo(group, {
+    coordinateSystem: "C1 显示坐标系",
+    name: frame.name,
+    type: "坐标系",
+    position: frame.origin,
+    details: [
+      `原点：${formatPoint(frame.origin)}，C1 显示坐标系`,
+      `X 轴：${formatPoint(frame.axes.x)}，C1 显示坐标系中的方向向量`,
+      `Y 轴：${formatPoint(frame.axes.y)}，C1 显示坐标系中的方向向量`,
+      `Z 轴：${formatPoint(frame.axes.z)}，C1 显示坐标系中的方向向量`,
+    ],
+  });
+}
+
+function frameSurfaceDetails(frame) {
+  const details = [
+    "说明：通过取景框角点 PnP 估计出的实像面。",
+    `中心点：${formatPoint(frame.origin)}，C1 显示坐标系`,
+    `X 轴：${formatPoint(frame.axes.x)}，C1 显示坐标系中的方向向量`,
+    `Y 轴：${formatPoint(frame.axes.y)}，C1 显示坐标系中的方向向量`,
+    `法向量：${formatPoint(frame.axes.z)}，C1 显示坐标系中的方向向量`,
+    `尺寸：X=${formatNumber(frame.width)}mm，Y=${formatNumber(frame.height)}mm`,
+  ];
+  if (Number.isFinite(frame.reprojectionErrorPx)) {
+    details.push(`PnP 重投影误差：${formatNumber(frame.reprojectionErrorPx)}px`);
+  }
+  if (frame.method) {
+    details.push(`来源：${methodName(frame.method)}`);
+  }
+  return details;
+}
+
+function deviceModelMesh(geometry, layers) {
+  const device = geometry.device;
+  if (!device) return null;
+
   const group = new THREE.Group();
-  const material = new THREE.MeshStandardMaterial({ color, metalness: 0.18, roughness: 0.42 });
-  const geometry = viewFrameGeometry(xCenter);
+  if (layers.frontViewFrame) group.add(viewFrameAssembly(device.frames[0], device.viewFrame, "前取景框"));
+  if (layers.rearViewFrame) group.add(viewFrameAssembly(device.frames[1], device.viewFrame, "后取景框"));
+  if (layers.frontFrostedGlass) {
+    group.add(frostedGlassAssembly(device.frames[0], device.viewFrame, device.frostedGlass, "前毛玻璃片"));
+  }
+  if (layers.rearFrostedGlass) {
+    group.add(frostedGlassAssembly(device.frames[1], device.viewFrame, device.frostedGlass, "后毛玻璃片"));
+  }
+  if (layers.frontReflectionMirror) group.add(reflectionMirrorAssembly(device.reflections[0], 0x8c7f93, "前反射镜"));
+  if (layers.rearReflectionMirror) group.add(reflectionMirrorAssembly(device.reflections[1], 0x756f7d, "后反射镜"));
+  if (layers.basePlate) group.add(basePlateMesh(device.basePlate));
+  if (layers.probeRod) group.add(probeRodMesh(device.probeRod, device.basePlate));
+  if (geometry.deviceAlignment?.matrix) {
+    group.applyMatrix4(matrixFromRows(geometry.deviceAlignment.matrix));
+  }
+  return group;
+}
+
+function deviceSolidMaterial(color = DEVICE_DARK_COLOR) {
+  return new THREE.MeshStandardMaterial({
+    color,
+    depthTest: true,
+    depthWrite: true,
+    metalness: 0.18,
+    opacity: 1,
+    roughness: 0.42,
+    transparent: false,
+  });
+}
+
+function viewFrameAssembly(frame, spec, name) {
+  const group = new THREE.Group();
+  const material = deviceSolidMaterial(VIEW_FRAME_COLOR);
+  const geometry = viewFrameGeometry(frame, spec);
   const mesh = new THREE.Mesh(geometry, material);
   const edges = new THREE.LineSegments(
     new THREE.EdgesGeometry(geometry),
-    new THREE.LineBasicMaterial({ color: 0x2f4d5d, transparent: true, opacity: 0.75 }),
+    new THREE.LineBasicMaterial({ color: 0x262c35, transparent: true, opacity: 0.75 }),
   );
   group.add(mesh);
   group.add(edges);
   return withPickInfo(group, {
+    coordinateSystem: "设备坐标系；显示时整体通过 C1-P1 对齐变换放入 C1 显示坐标系",
     name,
     type: "取景框实体",
-    position: { x: xCenter, y: 0, z: 0 },
-    details: viewFrameDetails(xCenter),
+    position: frame.center,
+    details: viewFrameDetails(frame, spec),
   });
 }
 
-function viewFrameGeometry(xCenter) {
-  const spec = viewFrameSpec();
+function viewFrameGeometry(frame, spec) {
+  const outerBounds = rectBounds(frame.outerCorners);
+  const innerBounds = rectBounds(frame.rectCorners);
   const outer = roundedRectPath(
-    xCenter - spec.outerWidth / 2,
-    xCenter + spec.outerWidth / 2,
-    -spec.outerHeight / 2,
-    spec.outerHeight / 2,
+    outerBounds.xMin,
+    outerBounds.xMax,
+    outerBounds.yMin,
+    outerBounds.yMax,
     spec.outerRadius,
   );
   const inner = roundedRectPath(
-    xCenter - spec.innerWidth / 2,
-    xCenter + spec.innerWidth / 2,
-    -spec.innerHeight / 2,
-    spec.innerHeight / 2,
+    innerBounds.xMin,
+    innerBounds.xMax,
+    innerBounds.yMin,
+    innerBounds.yMax,
     spec.innerRadius,
     true,
   );
@@ -366,22 +499,10 @@ function viewFrameGeometry(xCenter) {
   return geometry;
 }
 
-function viewFrameSpec() {
-  return {
-    innerWidth: 22,
-    innerHeight: 17,
-    innerRadius: 1.5,
-    outerWidth: 46,
-    outerHeight: 47,
-    outerRadius: 2.5,
-    thickness: 2,
-  };
-}
-
-function viewFrameDetails(xCenter) {
-  const spec = viewFrameSpec();
+function viewFrameDetails(frame, spec) {
   return [
-    `中心点：${formatPoint({ x: xCenter, y: 0, z: 0 })}`,
+    `中心点：${formatPoint(frame.center)}，设备坐标系`,
+    `设备实像面(Z=0)：${planeEquation(frame.normal, frame.d)}`,
     `透空尺寸：X=${formatNumber(spec.innerWidth)}mm，Y=${formatNumber(spec.innerHeight)}mm`,
     `透空圆角：R=${formatNumber(spec.innerRadius)}mm`,
     `实体外形：X=${formatNumber(spec.outerWidth)}mm，Y=${formatNumber(spec.outerHeight)}mm`,
@@ -389,8 +510,8 @@ function viewFrameDetails(xCenter) {
   ];
 }
 
-function frostedGlassAssembly(xCenter, name) {
-  const geometry = frostedGlassGeometry(xCenter);
+function frostedGlassAssembly(frame, spec, glass, name) {
+  const geometry = frostedGlassGeometry(frame, spec, glass);
   const material = new THREE.MeshPhysicalMaterial({
     color: 0xf5f7f2,
     transparent: true,
@@ -409,22 +530,22 @@ function frostedGlassAssembly(xCenter, name) {
   group.add(mesh);
   group.add(edges);
   return withPickInfo(group, {
+    coordinateSystem: "设备坐标系；显示时整体通过 C1-P1 对齐变换放入 C1 显示坐标系",
     name,
     type: "毛玻璃片",
-    position: { x: xCenter, y: 0, z: 1.5 },
-    details: frostedGlassDetails(xCenter),
+    position: { ...frame.center, z: frame.center.z + glass.thickness / 2 },
+    details: frostedGlassDetails(frame, spec, glass),
   });
 }
 
-function frostedGlassGeometry(xCenter) {
-  const frame = viewFrameSpec();
-  const glass = frostedGlassSpec();
+function frostedGlassGeometry(frame, spec, glass) {
+  const bounds = rectBounds(frame.outerCorners);
   const shape = roundedRectPath(
-    xCenter - frame.outerWidth / 2,
-    xCenter + frame.outerWidth / 2,
-    -frame.outerHeight / 2,
-    frame.outerHeight / 2,
-    frame.outerRadius,
+    bounds.xMin,
+    bounds.xMax,
+    bounds.yMin,
+    bounds.yMax,
+    spec.outerRadius,
   );
   const geometry = new THREE.ExtrudeGeometry(shape, {
     bevelEnabled: false,
@@ -437,26 +558,18 @@ function frostedGlassGeometry(xCenter) {
   return geometry;
 }
 
-function frostedGlassSpec() {
-  return {
-    thickness: 3,
-  };
-}
-
-function frostedGlassDetails(xCenter) {
-  const frame = viewFrameSpec();
-  const glass = frostedGlassSpec();
+function frostedGlassDetails(frame, spec, glass) {
   return [
-    `中心点：${formatPoint({ x: xCenter, y: 0, z: glass.thickness / 2 })}`,
-    `前表面：Z=0`,
+    `中心点：${formatPoint({ ...frame.center, z: frame.center.z + glass.thickness / 2 })}，设备坐标系`,
+    `设备实像面(Z=0)：${planeEquation(frame.normal, frame.d)}`,
     `厚度：沿 +Z 方向 ${formatNumber(glass.thickness)}mm`,
-    `外形：X=${formatNumber(frame.outerWidth)}mm，Y=${formatNumber(frame.outerHeight)}mm，R=${formatNumber(frame.outerRadius)}mm`,
+    `外形：X=${formatNumber(spec.outerWidth)}mm，Y=${formatNumber(spec.outerHeight)}mm，R=${formatNumber(spec.outerRadius)}mm`,
   ];
 }
 
-function reflectionMirrorAssembly(xOffset, color, name) {
+function reflectionMirrorAssembly(reflection, color, name) {
   const group = new THREE.Group();
-  const geometry = reflectionMirrorGeometry(xOffset);
+  const geometry = reflectionMirrorGeometry(reflection);
   const material = new THREE.MeshStandardMaterial({
     color,
     transparent: true,
@@ -473,25 +586,31 @@ function reflectionMirrorAssembly(xOffset, color, name) {
   group.add(mesh);
   group.add(edges);
   return withPickInfo(group, {
+    coordinateSystem: "设备坐标系；显示时整体通过 C1-P1 对齐变换放入 C1 显示坐标系",
     name,
     type: "反射镜",
-    position: reflectionMirrorCenter(xOffset),
-    details: reflectionMirrorDetails(xOffset),
+    position: reflection.point,
+    details: reflectionMirrorDetails(reflection),
   });
 }
 
-function reflectionMirrorGeometry(xOffset) {
-  const spec = reflectionMirrorSpec();
-  const { xMin, xMax } = reflectionMirrorXRange(xOffset, spec.width);
-  const yMin = -spec.height / 2;
-  const yMax = spec.height / 2;
+function reflectionMirrorGeometry(reflection) {
+  const center = toVector3(reflection.point);
+  const normal = toVector3(reflection.normal).normalize();
+  const widthAxis = new THREE.Vector3(normal.z, 0, -normal.x).normalize();
+  const heightAxis = new THREE.Vector3(0, 1, 0);
+  const thicknessDirection = toVector3(reflection.thicknessDirection).normalize();
+  const halfWidth = reflection.width / 2;
+  const halfHeight = reflection.height / 2;
   const front = [
-    { x: xMin, y: yMin, z: reflectionMirrorZ(xMin, xOffset) },
-    { x: xMax, y: yMin, z: reflectionMirrorZ(xMax, xOffset) },
-    { x: xMax, y: yMax, z: reflectionMirrorZ(xMax, xOffset) },
-    { x: xMin, y: yMax, z: reflectionMirrorZ(xMin, xOffset) },
-  ];
-  const back = front.map((point) => ({ ...point, z: point.z + spec.thickness }));
+    center.clone().add(widthAxis.clone().multiplyScalar(-halfWidth)).add(heightAxis.clone().multiplyScalar(-halfHeight)),
+    center.clone().add(widthAxis.clone().multiplyScalar(halfWidth)).add(heightAxis.clone().multiplyScalar(-halfHeight)),
+    center.clone().add(widthAxis.clone().multiplyScalar(halfWidth)).add(heightAxis.clone().multiplyScalar(halfHeight)),
+    center.clone().add(widthAxis.clone().multiplyScalar(-halfWidth)).add(heightAxis.clone().multiplyScalar(halfHeight)),
+  ].map(toPointFromVector);
+  const back = front.map((point) => toPointFromVector(
+    toVector3(point).add(thicknessDirection.clone().multiplyScalar(reflection.thickness)),
+  ));
   const vertices = [...front, ...back];
   const indices = [
     0, 1, 2, 0, 2, 3,
@@ -509,72 +628,32 @@ function reflectionMirrorGeometry(xOffset) {
   return geometry;
 }
 
-function reflectionMirrorSpec() {
-  const frame = viewFrameSpec();
-  return {
-    width: 21.2,
-    height: frame.outerHeight,
-    thickness: 1,
-  };
-}
-
-function reflectionMirrorXRange(xOffset, mirrorWidth) {
-  const halfXSpan = mirrorWidth / (2 * Math.SQRT2);
-  return {
-    xMin: xOffset - halfXSpan,
-    xMax: xOffset + halfXSpan,
-  };
-}
-
-function reflectionMirrorZ(x, xOffset) {
-  return -(x - xOffset) + 23;
-}
-
-function reflectionMirrorCenter(xOffset) {
-  const spec = reflectionMirrorSpec();
-  return {
-    x: xOffset,
-    y: 0,
-    z: reflectionMirrorZ(xOffset, xOffset) + spec.thickness / 2,
-  };
-}
-
-function reflectionMirrorDetails(xOffset) {
-  const spec = reflectionMirrorSpec();
-  const center = reflectionMirrorCenter(xOffset);
+function reflectionMirrorDetails(reflection) {
   return [
-    `中心点：${formatPoint(center)}`,
-    `前平面：z = -(x - ${formatNumber(xOffset)}) + 23`,
-    `尺寸：镜面宽 ${formatNumber(spec.width)}mm，高 ${formatNumber(spec.height)}mm`,
-    `厚度：沿 +Z 方向 ${formatNumber(spec.thickness)}mm`,
+    `镜面参考点：${formatPoint(reflection.point)}，设备坐标系`,
+    `前平面：${planeEquation(reflection.normal, reflection.d)}`,
+    `尺寸：镜面宽 ${formatNumber(reflection.width)}mm，高 ${formatNumber(reflection.height)}mm`,
+    `厚度：沿 ${formatPoint(reflection.thicknessDirection)} 方向 ${formatNumber(reflection.thickness)}mm`,
   ];
 }
 
-function basePlateMesh() {
-  const bounds = basePlateBounds();
+function basePlateMesh(bounds) {
   const center = new THREE.Vector3(
     (bounds.xMin + bounds.xMax) / 2,
     (bounds.yMin + bounds.yMax) / 2,
     (bounds.zMin + bounds.zMax) / 2,
   );
-  const material = new THREE.MeshStandardMaterial({
-    color: 0xd8d8d2,
-    depthTest: true,
-    depthWrite: true,
-    metalness: 0.16,
-    opacity: 1,
-    roughness: 0.48,
-    transparent: false,
-  });
-  const mesh = new THREE.Mesh(basePlateGeometry(bounds, 3), material);
+  const material = deviceSolidMaterial();
+  const mesh = new THREE.Mesh(basePlateGeometry(bounds), material);
   const edges = new THREE.LineSegments(
     new THREE.EdgesGeometry(mesh.geometry),
-    new THREE.LineBasicMaterial({ color: 0x777a76, transparent: true, opacity: 0.72 }),
+    new THREE.LineBasicMaterial({ color: 0x262c35, transparent: true, opacity: 0.72 }),
   );
   const group = new THREE.Group();
   group.add(mesh);
   group.add(edges);
   return withPickInfo(group, {
+    coordinateSystem: "设备坐标系；显示时整体通过 C1-P1 对齐变换放入 C1 显示坐标系",
     name: "底座",
     type: "设备底座",
     position: toPointFromVector(center),
@@ -582,8 +661,8 @@ function basePlateMesh() {
   });
 }
 
-function basePlateGeometry(bounds, radius) {
-  const shape = roundedRectPath(bounds.xMin, bounds.xMax, bounds.zMin, bounds.zMax, radius);
+function basePlateGeometry(bounds) {
+  const shape = roundedRectPath(bounds.xMin, bounds.xMax, bounds.zMin, bounds.zMax, bounds.cornerRadius);
   const geometry = new THREE.ExtrudeGeometry(shape, {
     bevelEnabled: false,
     curveSegments: 12,
@@ -629,17 +708,6 @@ function roundedRectPath(xMin, xMax, yMin, yMax, radius, clockwise = false) {
   return path;
 }
 
-function basePlateBounds() {
-  return {
-    xMin: -23,
-    xMax: 105,
-    yMin: 23.5,
-    yMax: 29.5,
-    zMin: -132,
-    zMax: 42,
-  };
-}
-
 function basePlateDetails(bounds) {
   return [
     `上平面：Y=${formatNumber(bounds.yMin)}mm`,
@@ -647,14 +715,14 @@ function basePlateDetails(bounds) {
     `X 范围：${formatNumber(bounds.xMin)}mm 到 ${formatNumber(bounds.xMax)}mm，宽度 ${formatNumber(bounds.xMax - bounds.xMin)}mm`,
     `Z 范围：${formatNumber(bounds.zMin)}mm 到 ${formatNumber(bounds.zMax)}mm，长度 ${formatNumber(bounds.zMax - bounds.zMin)}mm`,
     `厚度：${formatNumber(bounds.yMax - bounds.yMin)}mm`,
-    "圆角：R=3.000mm",
+    `圆角：R=${formatNumber(bounds.cornerRadius)}mm`,
   ];
 }
 
-function probeRodMesh() {
+function probeRodMesh(spec, basePlate) {
   const group = new THREE.Group();
   const material = new THREE.MeshStandardMaterial({ color: 0xbfc1bd, metalness: 0.32, roughness: 0.28 });
-  const spec = probeRodSpec();
+  const connectorMaterial = deviceSolidMaterial();
   const root = toVector3(spec.root);
   const target = toVector3(spec.target);
   const rodAxis = target.clone().sub(root).normalize();
@@ -674,10 +742,11 @@ function probeRodMesh() {
   );
   tip.position.copy(target.clone().add(rodAxis.clone().multiplyScalar(-spec.tipHeight / 2)));
   tip.quaternion.copy(quaternion);
-  group.add(probeRodConnector(spec, material));
+  group.add(probeRodConnector(spec, basePlate, connectorMaterial));
   group.add(cylinder);
   group.add(tip);
   return withPickInfo(group, {
+    coordinateSystem: "设备坐标系；显示时整体通过 C1-P1 对齐变换放入 C1 显示坐标系",
     name: "测量探杆",
     type: "探杆",
     position: spec.root,
@@ -685,8 +754,8 @@ function probeRodMesh() {
   });
 }
 
-function probeRodConnector(spec, material) {
-  const baseY = basePlateBounds().yMax;
+function probeRodConnector(spec, basePlate, material) {
+  const baseY = basePlate.yMax;
   const radius = spec.connectorRadius;
   const shape = new THREE.Shape();
   shape.moveTo(radius, 0);
@@ -702,25 +771,14 @@ function probeRodConnector(spec, material) {
   return mesh;
 }
 
-function probeRodSpec() {
-  return {
-    root: { x: 41, y: 37, z: -132 },
-    target: { x: 41, y: 37, z: -241 },
-    rodRadius: 0.9,
-    tipHeight: 5.0,
-    connectorRadius: 13,
-    connectorLength: 8,
-  };
-}
-
 function probeRodLength(spec) {
   return toVector3(spec.root).distanceTo(toVector3(spec.target));
 }
 
 function probeRodDetails(spec) {
   return [
-    `根部坐标：${formatPoint(spec.root)}`,
-    `靶点坐标：${formatPoint(spec.target)}`,
+    `根部坐标：${formatPoint(spec.root)}，设备坐标系`,
+    `靶点坐标：${formatPoint(spec.target)}，设备坐标系`,
     `杆长：${formatNumber(probeRodLength(spec))}mm`,
     "方向：沿 -Z 方向",
   ];
@@ -737,50 +795,30 @@ function frameAxis(origin, direction, color, length) {
   );
 }
 
-function frameBasis(frame) {
-  return {
-    x: toVector3(frame.axes.x).normalize(),
-    y: toVector3(frame.axes.y).normalize(),
-    z: toVector3(frame.axes.z).normalize(),
-  };
-}
-
-function localPoint(origin, axes, values) {
-  return toVector3(origin)
-    .add(axes.x.clone().multiplyScalar(values[0]))
-    .add(axes.y.clone().multiplyScalar(values[1]))
-    .add(axes.z.clone().multiplyScalar(values[2]));
-}
-
-function orientedBox(center, axes, size, material) {
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(size[0], size[1], size[2]), material);
-  const matrix = new THREE.Matrix4().makeBasis(axes.x, axes.y, axes.z);
-  matrix.setPosition(center);
-  mesh.matrixAutoUpdate = false;
-  mesh.matrix.copy(matrix);
-  return mesh;
-}
-
-function planeQuad(origin, axes, width, height, material) {
-  const halfWidth = width / 2;
-  const halfHeight = height / 2;
-  const points = [
-    localPoint(origin, axes, [-halfWidth, -halfHeight, 0.08]),
-    localPoint(origin, axes, [halfWidth, -halfHeight, 0.08]),
-    localPoint(origin, axes, [halfWidth, halfHeight, 0.08]),
-    localPoint(origin, axes, [-halfWidth, halfHeight, 0.08]),
-  ];
-  const quad = new THREE.Mesh(
-    new THREE.BufferGeometry().setFromPoints(points),
-    material,
-  );
-  quad.geometry.setIndex([0, 1, 2, 0, 2, 3]);
-  quad.geometry.computeVertexNormals();
-  return quad;
-}
-
 function toPointFromVector(vector) {
   return { x: vector.x, y: vector.y, z: vector.z };
+}
+
+function toPointFromArray(vector) {
+  return { x: vector[0], y: vector[1], z: vector[2] };
+}
+
+function matrixFromRows(rows) {
+  return new THREE.Matrix4().set(
+    rows[0][0], rows[0][1], rows[0][2], rows[0][3],
+    rows[1][0], rows[1][1], rows[1][2], rows[1][3],
+    rows[2][0], rows[2][1], rows[2][2], rows[2][3],
+    rows[3][0], rows[3][1], rows[3][2], rows[3][3],
+  );
+}
+
+function quaternionFromAxes(axes) {
+  const matrix = new THREE.Matrix4().makeBasis(
+    toVector3(axes.x).normalize(),
+    toVector3(axes.y).normalize(),
+    toVector3(axes.z).normalize(),
+  );
+  return new THREE.Quaternion().setFromRotationMatrix(matrix);
 }
 
 function opticalAxisMesh(axis) {
@@ -795,9 +833,15 @@ function opticalAxisMesh(axis) {
   ));
   group.add(pointMesh(axis.end, axis.color, 0.25));
   return withPickInfo(group, {
+    coordinateSystem: "C1 显示坐标系",
     name: axis.label,
     type: "光轴",
     position: axis.origin,
+    details: [
+      `起点：${formatPoint(axis.origin)}，C1 显示坐标系`,
+      `终点：${formatPoint(axis.end)}，C1 显示坐标系`,
+      `方向：${formatPoint(axis.direction)}，C1 显示坐标系中的方向向量`,
+    ],
   });
 }
 
@@ -806,9 +850,17 @@ function cameraMesh(camera) {
   const material = new THREE.MeshStandardMaterial({
     color: camera.color,
     metalness: 0.18,
+    opacity: 0.76,
     roughness: 0.34,
+    transparent: true,
   });
-  const dark = new THREE.MeshStandardMaterial({ color: 0x141923, metalness: 0.2, roughness: 0.28 });
+  const dark = new THREE.MeshStandardMaterial({
+    color: 0x141923,
+    metalness: 0.2,
+    opacity: 0.82,
+    roughness: 0.28,
+    transparent: true,
+  });
   const glass = new THREE.MeshStandardMaterial({
     color: 0x1a1a1a,
     emissive: 0x050505,
@@ -817,37 +869,37 @@ function cameraMesh(camera) {
   });
 
   const body = new THREE.Mesh(
-    new THREE.BoxGeometry(3.4, 1.9, 1.8),
+    new THREE.BoxGeometry(6.2, 3.2, 3.0),
     material,
   );
   const top = new THREE.Mesh(
-    new THREE.BoxGeometry(1.5, 0.48, 0.95),
+    new THREE.BoxGeometry(2.7, 0.82, 1.55),
     material,
   );
   const lensBarrel = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.72, 0.82, 1.55, 40),
+    new THREE.CylinderGeometry(1.45, 1.62, 3.2, 56),
     dark,
   );
   const lensGlass = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.55, 0.55, 0.12, 40),
+    new THREE.CylinderGeometry(1.14, 1.14, 0.24, 56),
     glass,
   );
   const mount = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.98, 0.98, 0.36, 40),
+    new THREE.CylinderGeometry(1.82, 1.82, 0.62, 56),
     material,
   );
   const sensor = new THREE.Mesh(
-    new THREE.BoxGeometry(1.25, 0.9, 0.08),
+    new THREE.BoxGeometry(2.2, 1.45, 0.12),
     new THREE.MeshStandardMaterial({ color: 0x0d1117, roughness: 0.4 }),
   );
-  top.position.set(-0.35, 1.18, -0.18);
+  top.position.set(-0.58, 1.94, -0.24);
   mount.rotation.x = Math.PI / 2;
-  mount.position.z = 1.05;
+  mount.position.z = 1.68;
   lensBarrel.rotation.x = Math.PI / 2;
-  lensBarrel.position.z = 1.85;
+  lensBarrel.position.z = 3.25;
   lensGlass.rotation.x = Math.PI / 2;
-  lensGlass.position.z = 2.68;
-  sensor.position.z = -0.95;
+  lensGlass.position.z = 4.98;
+  sensor.position.z = -1.55;
   group.add(body);
   group.add(top);
   group.add(mount);
@@ -855,10 +907,19 @@ function cameraMesh(camera) {
   group.add(lensGlass);
   group.add(sensor);
   group.position.copy(toVector3(camera.position));
+  group.quaternion.copy(quaternionFromAxes(camera.axes));
+  group.scale.setScalar(CAMERA_MODEL_SCALE);
   return withPickInfo(group, {
+    coordinateSystem: "C1 显示坐标系",
     name: camera.name,
     type: "相机",
     position: camera.position,
+    details: [
+      `位置：${formatPoint(camera.position)}，C1 显示坐标系`,
+      `X 轴：${formatPoint(camera.axes.x)}，C1 显示坐标系中的方向向量`,
+      `Y 轴：${formatPoint(camera.axes.y)}，C1 显示坐标系中的方向向量`,
+      `Z 轴/光轴：${formatPoint(camera.axes.z)}，C1 显示坐标系中的方向向量`,
+    ],
   });
 }
 
@@ -879,31 +940,57 @@ function lineMesh(first, second, color, info = null) {
   return info ? withPickInfo(line, info) : line;
 }
 
-function labelSprite(text, point) {
+function laserLineMesh(first, second, info = null) {
+  const direction = normalize(subtractVector(second, first));
+  const center = midpoint(first, second);
+  const halfLength = 260;
+  const start = addVector(center, scaleVector(direction, -halfLength));
+  const end = addVector(center, scaleVector(direction, halfLength));
+  const line = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([toVector3(start), toVector3(end)]),
+    new THREE.LineBasicMaterial({ color: 0xef4444, transparent: true, opacity: 0.95 }),
+  );
+  return info ? withPickInfo(line, info) : line;
+}
+
+function labelSprite(text, point, deviceModelVisible) {
   const canvas = document.createElement("canvas");
   const context = canvas.getContext("2d");
-  canvas.width = 256;
-  canvas.height = 64;
-  context.font = "28px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
-  context.fillStyle = "#111114";
-  context.fillText(text, 12, 40);
+  canvas.width = 640;
+  canvas.height = 160;
+  context.font = "700 64px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
+  if (deviceModelVisible) {
+    context.lineWidth = 5;
+    context.strokeStyle = "rgba(0, 0, 0, 0.72)";
+    context.strokeText(text, 18, 104);
+    context.fillStyle = "#ffffff";
+  } else {
+    context.fillStyle = "#000000";
+  }
+  context.fillText(text, 18, 104);
   const texture = new THREE.CanvasTexture(canvas);
   const material = new THREE.SpriteMaterial({ map: texture, transparent: true });
   const sprite = new THREE.Sprite(material);
   sprite.position.copy(toVector3(point));
-  sprite.position.y += 1.5;
-  sprite.scale.set(8, 2, 1);
+  sprite.position.y += 3.0;
+  sprite.scale.set(18, 4.5, 1);
   return sprite;
 }
 
 function InspectionPanel({ info }) {
-  const details = info?.details || (info?.position ? [formatPoint(info.position)] : null);
+  const details = info?.details || (info?.position ? [`位置：${formatPoint(info.position)}${info.coordinateSystem ? `，${info.coordinateSystem}` : ""}`] : null);
   return (
     <div className="inspection-panel">
       <div className="inspection-title">{info?.name || "对象信息"}</div>
       <div className="inspection-grid">
         <span>类型</span>
         <strong>{info?.type || "移动鼠标到对象上查看"}</strong>
+        {info?.coordinateSystem && (
+          <>
+            <span>坐标系</span>
+            <strong>{info.coordinateSystem}</strong>
+          </>
+        )}
         {info?.sampleName && (
           <>
             <span>样本</span>
@@ -923,6 +1010,31 @@ function formatPoint(point) {
   return `(${formatNumber(point.x)}, ${formatNumber(point.y)}, ${formatNumber(point.z)})`;
 }
 
+function planeEquation(normal, d) {
+  return `${formatNumber(normal.x)}x + ${formatNumber(normal.y)}y + ${formatNumber(normal.z)}z + ${formatNumber(d)} = 0`;
+}
+
+function methodName(method) {
+  const names = {
+    dcpam_device_geometry: "DCPAM 设备几何定义",
+    dcpam_reflection_geometry: "DCPAM 反射镜几何定义",
+    mirror_reflection: "由实像面关于反射面镜像得到",
+    pnp_frame_pose: "PnP 目标定位法",
+  };
+  return names[method] || method;
+}
+
+function rectBounds(corners) {
+  const xs = corners.map((point) => point.x);
+  const ys = corners.map((point) => point.y);
+  return {
+    xMin: Math.min(...xs),
+    xMax: Math.max(...xs),
+    yMin: Math.min(...ys),
+    yMax: Math.max(...ys),
+  };
+}
+
 function formatNumber(value) {
   return Number.isFinite(value) ? value.toFixed(3) : "";
 }
@@ -933,6 +1045,24 @@ function midpoint(first, second) {
     y: (first.y + second.y) / 2,
     z: (first.z + second.z) / 2,
   };
+}
+
+function addVector(first, second) {
+  return { x: first.x + second.x, y: first.y + second.y, z: first.z + second.z };
+}
+
+function subtractVector(first, second) {
+  return { x: first.x - second.x, y: first.y - second.y, z: first.z - second.z };
+}
+
+function scaleVector(vector, scale) {
+  return { x: vector.x * scale, y: vector.y * scale, z: vector.z * scale };
+}
+
+function normalize(vector) {
+  const length = Math.hypot(vector.x, vector.y, vector.z);
+  if (length < 1e-9) return { x: 0, y: 0, z: 1 };
+  return scaleVector(vector, 1 / length);
 }
 
 function createAxesView(mount) {
@@ -984,16 +1114,33 @@ function axisLabelSprite(text, point, color) {
   return sprite;
 }
 
-function renderAxesView(axes, mainCamera) {
+function renderAxesView(axes, mainCamera, geometry) {
   if (!axes) return;
   axes.mount.style.display = "block";
-  axes.root.quaternion.copy(mainCamera.quaternion).invert();
+  axes.root.quaternion.copy(mainCamera.quaternion).invert().multiply(deviceQuaternion(geometry));
   axes.renderer.render(axes.scene, axes.camera);
 }
 
-function directionFromCamera(camera, controls) {
-  const direction = controls.target.clone().sub(camera.position).normalize();
-  return { x: direction.x, y: direction.y, z: direction.z };
+function deviceQuaternion(geometry) {
+  const axes = deviceAxes(geometry);
+  const matrix = new THREE.Matrix4().makeBasis(axes.x, axes.y, axes.z);
+  return new THREE.Quaternion().setFromRotationMatrix(matrix);
+}
+
+function deviceAxes(geometry) {
+  const rows = geometry?.deviceAlignment?.matrix;
+  if (!rows) {
+    return {
+      x: new THREE.Vector3(1, 0, 0),
+      y: new THREE.Vector3(0, 1, 0),
+      z: new THREE.Vector3(0, 0, 1),
+    };
+  }
+  return {
+    x: new THREE.Vector3(rows[0][0], rows[1][0], rows[2][0]).normalize(),
+    y: new THREE.Vector3(rows[0][1], rows[1][1], rows[2][1]).normalize(),
+    z: new THREE.Vector3(rows[0][2], rows[1][2], rows[2][2]).normalize(),
+  };
 }
 
 function setHomeView(camera, controls) {
@@ -1014,21 +1161,16 @@ function setCameraView(camera, controls, offsetDirection, upDirection) {
   controls.update();
 }
 
-function fitCamera(camera, controls, rows, geometry, mount) {
+function fitCamera(camera, controls, geometry, mount) {
   const points = [];
-  rows.forEach((row) => {
-    ["front_virtual", "rear_virtual"].forEach((prefix) => {
-      const point = pointFromRow(row, prefix, "cf");
-      if (point) points.push(point);
-    });
-  });
   if (geometry) {
     geometry.planes.forEach((plane) => points.push(...plane.corners));
     geometry.frames.forEach((frame) => {
       points.push(frame.origin);
       points.push(...frame.corners);
     });
-    geometry.cameras.forEach((item) => points.push(item.position));
+    geometry.cameras.forEach((item) => points.push(...cameraBounds(item)));
+    (geometry.coordinateFrames || []).forEach((frame) => points.push(frame.origin));
     (geometry.opticalAxes || []).forEach((axis) => {
       points.push(axis.origin);
       points.push(axis.end);
@@ -1061,81 +1203,33 @@ function applyOrthoFrustum(camera, mount) {
   camera.updateProjectionMatrix();
 }
 
+function cameraBounds(camera) {
+  const center = toVector3(camera.position);
+  const radius = CAMERA_MODEL_SCALE * 5.8;
+  return [
+    toPointFromVector(center.clone().add(new THREE.Vector3(-radius, -radius, -radius))),
+    toPointFromVector(center.clone().add(new THREE.Vector3(radius, radius, radius))),
+  ];
+}
+
 function deviceBounds(geometry) {
-  const frontFrame = geometry.frames.find((frame) => frame.label === "front frame");
-  const rearFrame = geometry.frames.find((frame) => frame.label === "rear frame");
-  if (!frontFrame || !rearFrame) return null;
-  const axes = frameBasis(frontFrame);
-  const frontOrigin = toVector3(frontFrame.origin);
-  const rearOrigin = toVector3(rearFrame.origin);
-  const center = frontOrigin.clone().add(rearOrigin).multiplyScalar(0.5);
-  const span = Math.max(34, frontOrigin.distanceTo(rearOrigin) + 34);
-  return [
-    ...basePlateCornerPoints(),
-    ...viewFrameCornerPoints(0),
-    ...viewFrameCornerPoints(80),
-    ...frostedGlassCornerPoints(0),
-    ...frostedGlassCornerPoints(80),
-    ...reflectionMirrorCornerPoints(0),
-    ...reflectionMirrorCornerPoints(80),
-    ...probeRodBounds(),
-    toPointFromVector(center.clone().add(axes.x.clone().multiplyScalar(span))),
-    toPointFromVector(center.clone().add(axes.x.clone().multiplyScalar(-span))),
-    toPointFromVector(center.clone().add(axes.y.clone().multiplyScalar(-45))),
-    toPointFromVector(center.clone().add(axes.z.clone().multiplyScalar(-28))),
-    toPointFromVector(center.clone().add(axes.z.clone().multiplyScalar(16))),
+  const device = geometry.device;
+  if (!device) return null;
+  const points = [
+    ...basePlateCornerPoints(device.basePlate),
+    ...device.frames.flatMap((frame) => viewFrameCornerPoints(frame, device.viewFrame)),
+    ...device.frames.flatMap((frame) => frostedGlassCornerPoints(frame, device.frostedGlass)),
+    ...device.reflections.flatMap(reflectionMirrorCornerPoints),
+    ...probeRodBounds(device.probeRod),
   ];
+  if (!geometry.deviceAlignment?.transformPoint) return points;
+  return points.map((point) => toPointFromArray(geometry.deviceAlignment.transformPoint([point.x, point.y, point.z])));
 }
 
-function frostedGlassCornerPoints(xCenter) {
-  const frame = viewFrameSpec();
-  const glass = frostedGlassSpec();
-  const xMin = xCenter - frame.outerWidth / 2;
-  const xMax = xCenter + frame.outerWidth / 2;
-  const yMin = -frame.outerHeight / 2;
-  const yMax = frame.outerHeight / 2;
-  return [
-    { x: xMin, y: yMin, z: 0 },
-    { x: xMax, y: yMin, z: 0 },
-    { x: xMax, y: yMax, z: 0 },
-    { x: xMin, y: yMax, z: 0 },
-    { x: xMin, y: yMin, z: glass.thickness },
-    { x: xMax, y: yMin, z: glass.thickness },
-    { x: xMax, y: yMax, z: glass.thickness },
-    { x: xMin, y: yMax, z: glass.thickness },
-  ];
-}
-
-function reflectionMirrorCornerPoints(xOffset) {
-  const spec = reflectionMirrorSpec();
-  const { xMin, xMax } = reflectionMirrorXRange(xOffset, spec.width);
-  const yMin = -spec.height / 2;
-  const yMax = spec.height / 2;
-  return [
-    { x: xMin, y: yMin, z: reflectionMirrorZ(xMin, xOffset) },
-    { x: xMax, y: yMin, z: reflectionMirrorZ(xMax, xOffset) },
-    { x: xMax, y: yMax, z: reflectionMirrorZ(xMax, xOffset) },
-    { x: xMin, y: yMax, z: reflectionMirrorZ(xMin, xOffset) },
-    { x: xMin, y: yMin, z: reflectionMirrorZ(xMin, xOffset) + spec.thickness },
-    { x: xMax, y: yMin, z: reflectionMirrorZ(xMax, xOffset) + spec.thickness },
-    { x: xMax, y: yMax, z: reflectionMirrorZ(xMax, xOffset) + spec.thickness },
-    { x: xMin, y: yMax, z: reflectionMirrorZ(xMin, xOffset) + spec.thickness },
-  ];
-}
-
-function probeRodBounds() {
-  const spec = probeRodSpec();
-  return [spec.root, spec.target];
-}
-
-function viewFrameCornerPoints(xCenter) {
-  const spec = viewFrameSpec();
-  const xMin = xCenter - spec.outerWidth / 2;
-  const xMax = xCenter + spec.outerWidth / 2;
-  const yMin = -spec.outerHeight / 2;
-  const yMax = spec.outerHeight / 2;
-  const zMin = -spec.thickness;
-  const zMax = 0;
+function frostedGlassCornerPoints(frame, glass) {
+  const { xMin, xMax, yMin, yMax } = rectBounds(frame.outerCorners);
+  const zMin = frame.center.z;
+  const zMax = frame.center.z + glass.thickness;
   return [
     { x: xMin, y: yMin, z: zMin },
     { x: xMax, y: yMin, z: zMin },
@@ -1148,8 +1242,35 @@ function viewFrameCornerPoints(xCenter) {
   ];
 }
 
-function basePlateCornerPoints() {
-  const bounds = basePlateBounds();
+function reflectionMirrorCornerPoints(reflection) {
+  return Array.from(reflectionMirrorGeometry(reflection).attributes.position.array)
+    .reduce((points, value, index, values) => {
+      if (index % 3 === 0) points.push({ x: value, y: values[index + 1], z: values[index + 2] });
+      return points;
+    }, []);
+}
+
+function probeRodBounds(spec) {
+  return [spec.root, spec.target];
+}
+
+function viewFrameCornerPoints(frame, spec) {
+  const { xMin, xMax, yMin, yMax } = rectBounds(frame.outerCorners);
+  const zMin = frame.center.z - spec.thickness;
+  const zMax = frame.center.z;
+  return [
+    { x: xMin, y: yMin, z: zMin },
+    { x: xMax, y: yMin, z: zMin },
+    { x: xMax, y: yMax, z: zMin },
+    { x: xMin, y: yMax, z: zMin },
+    { x: xMin, y: yMin, z: zMax },
+    { x: xMax, y: yMin, z: zMax },
+    { x: xMax, y: yMax, z: zMax },
+    { x: xMin, y: yMax, z: zMax },
+  ];
+}
+
+function basePlateCornerPoints(bounds) {
   return [
     { x: bounds.xMin, y: bounds.yMin, z: bounds.zMin },
     { x: bounds.xMax, y: bounds.yMin, z: bounds.zMin },

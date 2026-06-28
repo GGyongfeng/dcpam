@@ -1,0 +1,28 @@
+[device_visual.base_plate]
+x_range = [-23.0, 105.0]
+y_range = [23.5, 29.5]
+z_range = [-132.0, 42.0]
+corner_radius_mm = 3.0
+
+[device_visual.view_frame]
+inner_radius_mm = 1.5
+outer_width_mm = 46.0
+outer_height_mm = 47.0
+outer_radius_mm = 2.5
+thickness_mm = 2.0
+
+[device_visual.frosted_glass]
+thickness_mm = 3.0
+
+[device_visual.reflection]
+width_mm = 21.2
+height_mm = 47.0
+thickness_mm = 1.0
+thickness_direction = [0.0, 0.0, 1.0]
+
+[device_visual.probe_rod]
+direction = [0.0, 0.0, -1.0]
+rod_radius_mm = 0.9
+tip_height_mm = 5.0
+connector_radius_mm = 13.0
+connector_length_mm = 8.0

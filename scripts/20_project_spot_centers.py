@@ -1,27 +1,31 @@
-"""补全光斑测量总表 dataset/spot-measurements.csv 中的 V2 三维虚像点。
+"""生成光斑测量总表 dataset/spot-measurements.csv。
 
-默认读取 dataset/spot-measurements.csv，保留 V1 圆心记录，并为 V2
-记录写入实像点、虚像点和统一到 C1 坐标系后的三维点。
+从圆心 CSV 读取前后相机像素点，在各自相机坐标系下反投影到 PnP 实像面，
+再用取景框 PnP 与设备实像面的对齐关系把实像点转入设备坐标系。镜像反射、
+激光线、靶点距离全部在设备坐标系中完成。
 """
 from __future__ import annotations
 
 import argparse
 import csv
+import json
+import re
 from pathlib import Path
 
-import numpy as np
 from pydantic import BaseModel
 
-from dcpam_cv.config import CalibrationConfig, load_config
+from dcpam_cv.config import AppConfig, load_config
+from dcpam_cv.optical_geometry import OpticalGeometry
 from dcpam_cv.path import DCPAMPaths
 from dcpam_cv.steps.back_projection import back_project
-from dcpam_cv.steps.coordinate_transform import rear_to_front
+from dcpam_cv.steps.distance import point_to_line_distance
 from dcpam_cv.steps.mirror_transform import mirror_transform
-from dcpam_cv.types import Point2D, Point3D
+from dcpam_cv.types import LaserAxis, Point2D
 
 
 class SpotCenterRow(BaseModel):
     """圆心 CSV 中的一组前后相机像素坐标。"""
+
     name: str
     front_u: float
     front_v: float
@@ -30,161 +34,108 @@ class SpotCenterRow(BaseModel):
 
 
 class SpotMeasurementRecord(BaseModel):
-    """圆心、实像点、虚像点和坐标系统一后的完整记录。"""
+    """写入光斑测量总表的可追踪结果。"""
+
     name: str
-    front_u: float
-    front_v: float
-    rear_u: float
-    rear_v: float
-    front_real_x_cf: float | None = None
-    front_real_y_cf: float | None = None
-    front_real_z_cf: float | None = None
-    rear_real_x_cr: float | None = None
-    rear_real_y_cr: float | None = None
-    rear_real_z_cr: float | None = None
-    front_virtual_x_cf: float | None = None
-    front_virtual_y_cf: float | None = None
-    front_virtual_z_cf: float | None = None
-    rear_virtual_x_cr: float | None = None
-    rear_virtual_y_cr: float | None = None
-    rear_virtual_z_cr: float | None = None
-    rear_virtual_x_cf: float | None = None
-    rear_virtual_y_cf: float | None = None
-    rear_virtual_z_cf: float | None = None
+    spot_input_vector: str
+    front_real_point_c1_mm: str
+    rear_real_point_c2_mm: str
+    front_real_point_device_mm: str
+    rear_real_point_device_mm: str
+    front_virtual_point_device_mm: str
+    rear_virtual_point_device_mm: str
+    target_point_device_mm: str
+    laser_line_device_mm: str
+    distance_mm: float
 
 
-class SpotCenterProjector:
-    """将圆心像素点转换为统一 C1 坐标系下的虚像点。"""
+class SpotMeasurementProjector:
+    """在设备坐标系中完成镜像和距离计算的光斑测量 pipeline。"""
 
-    def __init__(self, calibration: CalibrationConfig) -> None:
-        self.calibration = calibration
+    def __init__(self, config: AppConfig) -> None:
+        self.config = config
+        self.optics = OpticalGeometry(config.calibration, config.device)
 
     def project_rows(self, rows: list[SpotCenterRow]) -> list[SpotMeasurementRecord]:
-        """批量处理圆心记录。"""
         return [self._project_row(row) for row in rows]
 
     def _project_row(self, row: SpotCenterRow) -> SpotMeasurementRecord:
         front_pixel = Point2D(u=row.front_u, v=row.front_v)
         rear_pixel = Point2D(u=row.rear_u, v=row.rear_v)
 
-        front_real = back_project(
+        front_real_c1 = back_project(
             front_pixel,
-            self.calibration.front_camera,
-            self.calibration.planes.front_image_real,
+            self.config.calibration.front_camera,
+            self.optics.front_image_real,
         )
-        rear_real = back_project(
+        rear_real_c2 = back_project(
             rear_pixel,
-            self.calibration.rear_camera,
-            self.calibration.planes.rear_image_real,
+            self.config.calibration.rear_camera,
+            self.optics.rear_image_real,
         )
-        front_virtual = mirror_transform(front_real, self.calibration.planes.front_reflection)
-        rear_virtual_cr = mirror_transform(rear_real, self.calibration.planes.rear_reflection)
-        rear_virtual_cf = rear_to_front(rear_virtual_cr, self.calibration.transform)
+        front_real_device = self.optics.front_camera_to_device.point(front_real_c1)
+        rear_real_device = self.optics.rear_camera_to_device.point(rear_real_c2)
+        front_virtual_device = mirror_transform(front_real_device, self.optics.front_reflection)
+        rear_virtual_device = mirror_transform(rear_real_device, self.optics.rear_reflection)
+        distance = point_to_line_distance(
+            self.optics.target_point,
+            LaserAxis(front=front_virtual_device, rear=rear_virtual_device),
+        )
 
         return SpotMeasurementRecord(
             name=row.name,
-            front_u=row.front_u,
-            front_v=row.front_v,
-            rear_u=row.rear_u,
-            rear_v=row.rear_v,
-            front_real_x_cf=front_real.x,
-            front_real_y_cf=front_real.y,
-            front_real_z_cf=front_real.z,
-            rear_real_x_cr=rear_real.x,
-            rear_real_y_cr=rear_real.y,
-            rear_real_z_cr=rear_real.z,
-            front_virtual_x_cf=front_virtual.x,
-            front_virtual_y_cf=front_virtual.y,
-            front_virtual_z_cf=front_virtual.z,
-            rear_virtual_x_cr=rear_virtual_cr.x,
-            rear_virtual_y_cr=rear_virtual_cr.y,
-            rear_virtual_z_cr=rear_virtual_cr.z,
-            rear_virtual_x_cf=rear_virtual_cf.x,
-            rear_virtual_y_cf=rear_virtual_cf.y,
-            rear_virtual_z_cf=rear_virtual_cf.z,
+            spot_input_vector=_json_vector(
+                [
+                    row.front_u,
+                    row.front_v,
+                    row.rear_u,
+                    row.rear_v,
+                    _length_from_name(row.name),
+                ],
+            ),
+            front_real_point_c1_mm=_json_vector(front_real_c1.to_array().tolist()),
+            rear_real_point_c2_mm=_json_vector(rear_real_c2.to_array().tolist()),
+            front_real_point_device_mm=_json_vector(front_real_device.to_array().tolist()),
+            rear_real_point_device_mm=_json_vector(rear_real_device.to_array().tolist()),
+            front_virtual_point_device_mm=_json_vector(front_virtual_device.to_array().tolist()),
+            rear_virtual_point_device_mm=_json_vector(rear_virtual_device.to_array().tolist()),
+            target_point_device_mm=_json_vector(self.optics.target_point.to_array().tolist()),
+            laser_line_device_mm=_json_vector(
+                [
+                    front_virtual_device.to_array().tolist(),
+                    rear_virtual_device.to_array().tolist(),
+                ],
+            ),
+            distance_mm=distance,
         )
 
 
-def _read_rows(path: Path, version: str | None = None) -> list[SpotCenterRow]:
+def _read_rows(path: Path) -> list[SpotCenterRow]:
     with path.open(newline="", encoding="utf-8") as file:
-        rows: list[SpotCenterRow] = []
-        for row in csv.DictReader(file):
-            rows.append(_center_row_from_csv(row, version))
-        return rows
-
-
-def _read_measurements(path: Path) -> list[SpotMeasurementRecord]:
-    with path.open(newline="", encoding="utf-8") as file:
-        return [
-            SpotMeasurementRecord(**_measurement_row_from_csv(row))
-            for row in csv.DictReader(file)
-        ]
+        return [_center_row_from_csv(row) for row in csv.DictReader(file)]
 
 
 def _write_records(path: Path, records: list[SpotMeasurementRecord]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = list(SpotMeasurementRecord.model_fields)
     with path.open("w", newline="", encoding="utf-8") as file:
-        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        writer = csv.DictWriter(file, fieldnames=list(SpotMeasurementRecord.model_fields))
         writer.writeheader()
         for record in records:
-            writer.writerow(_csv_row(record))
+            writer.writerow(record.model_dump())
 
 
-def _project_v2_records(
-    records: list[SpotMeasurementRecord],
-    projector: SpotCenterProjector,
-) -> list[SpotMeasurementRecord]:
-    projected: list[SpotMeasurementRecord] = []
-    for record in records:
-        if "-V2-" not in record.name.upper():
-            projected.append(record)
-            continue
-        projected.append(projector.project_rows([_center_row(record)])[0])
-    return projected
-
-
-def _center_row(record: SpotMeasurementRecord) -> SpotCenterRow:
-    return SpotCenterRow(
-        name=record.name,
-        front_u=record.front_u,
-        front_v=record.front_v,
-        rear_u=record.rear_u,
-        rear_v=record.rear_v,
-    )
-
-
-def _center_only_record(row: SpotCenterRow) -> SpotMeasurementRecord:
-    return SpotMeasurementRecord(
-        name=row.name,
-        front_u=row.front_u,
-        front_v=row.front_v,
-        rear_u=row.rear_u,
-        rear_v=row.rear_v,
-    )
-
-
-def _csv_row(record: SpotMeasurementRecord) -> dict[str, str | int | float]:
-    row = record.model_dump()
-    return {key: "" if value is None else value for key, value in row.items()}
-
-
-def _none_for_blank(row: dict[str, str]) -> dict[str, str | None]:
-    return {key: None if value == "" else value for key, value in row.items()}
-
-
-def _center_row_from_csv(row: dict[str, str], version: str | None) -> SpotCenterRow:
-    if "name" in row:
+def _center_row_from_csv(row: dict[str, str]) -> SpotCenterRow:
+    if "spot_input_vector" in row:
+        input_vector = json.loads(row["spot_input_vector"])
         return SpotCenterRow(
             name=row["name"],
-            front_u=float(row["front_u"]),
-            front_v=float(row["front_v"]),
-            rear_u=float(row["rear_u"]),
-            rear_v=float(row["rear_v"]),
+            front_u=float(input_vector[0]),
+            front_v=float(input_vector[1]),
+            rear_u=float(input_vector[2]),
+            rear_v=float(input_vector[3]),
         )
-    dataset_version = version or row.get("dataset_version") or "v1"
     return SpotCenterRow(
-        name=_sample_name(dataset_version, int(row["position_cm"]), int(row["pair_index"])),
+        name=row["name"],
         front_u=float(row["front_u"]),
         front_v=float(row["front_v"]),
         rear_u=float(row["rear_u"]),
@@ -192,44 +143,26 @@ def _center_row_from_csv(row: dict[str, str], version: str | None) -> SpotCenter
     )
 
 
-def _measurement_row_from_csv(row: dict[str, str]) -> dict[str, str | None]:
-    clean = _none_for_blank(row)
-    if clean.get("name") is not None:
-        return clean
-    dataset_version = str(clean["dataset_version"])
-    position_cm = int(str(clean["position_cm"]))
-    pair_index = int(str(clean["pair_index"]))
-    clean["name"] = _sample_name(dataset_version, position_cm, pair_index)
-    for key in ("dataset_version", "position_cm", "pair_index", "front_path", "rear_path"):
-        clean.pop(key, None)
-    return clean
+def _json_vector(values: list[float] | list[list[float]]) -> str:
+    return json.dumps(values, ensure_ascii=False)
 
 
-def _sample_name(dataset_version: str, position_cm: int, pair_index: int) -> str:
-    return f"L109D{position_cm}-{dataset_version.upper()}-{pair_index:02d}"
-
-
-def _print_transform(calibration: CalibrationConfig) -> None:
-    rotation = calibration.transform.rotation_matrix()
-    translation = calibration.transform.translation_vector()
-    print("R_rear_from_front:")
-    print(np.array2string(rotation, precision=8, suppress_small=False))
-    print("t_rear_from_front:")
-    print(np.array2string(translation, precision=8, suppress_small=False))
-    print(f"baseline_norm: {calibration.transform.baseline_norm:.8f}")
+def _length_from_name(name: str) -> float:
+    match = re.match(r"L(\d+)D\d+", name)
+    if match is None:
+        raise ValueError(f"无法从样本名解析杆长: {name}")
+    return float(match.group(1))
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="补全光斑测量总表的 V2 三维点")
-    parser.add_argument("--input", type=Path, default=Path("dataset/spot-measurements.csv"))
+    parser = argparse.ArgumentParser(description="用设备坐标系 pipeline 生成光斑测量总表")
+    parser.add_argument("--input", type=Path, default=Path("dataset/1-Spot-Center.csv"))
     parser.add_argument("--output", type=Path, default=Path("dataset/spot-measurements.csv"))
     parser.add_argument("--config", type=Path, default=DCPAMPaths().config_file)
     args = parser.parse_args()
 
-    calibration = load_config(args.config).calibration
-    _print_transform(calibration)
-
-    records = _project_v2_records(_read_measurements(args.input), SpotCenterProjector(calibration))
+    config = load_config(args.config)
+    records = SpotMeasurementProjector(config).project_rows(_read_rows(args.input))
     _write_records(args.output, records)
     print(f"处理完成: {len(records)} 组")
     print(f"输出文件: {args.output}")

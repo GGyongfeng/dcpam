@@ -141,29 +141,31 @@ config.toml
 写入位置在 `calibration` 部分：
 
 ```toml
-[calibration.frames.front_frame_pose]
-frame_width_mm = 22.0
-frame_height_mm = 17.0
-rotation_frame_to_camera = [...]
-translation_frame_to_camera = [...]
-matrix_frame_to_camera = [...]
-matrix_camera_to_frame = [...]
+[calibration.frame_surfaces.front_frame_pnp]
+method = "pnp_frame_pose"
+width_mm = 22.0
+height_mm = 17.0
+point = [...]
+x_axis = [...]
+y_axis = [...]
+normal = [...]
+d = ...
+corners = [...]
 reprojection_error_px = ...
 
-[calibration.frames.rear_frame_pose]
+[calibration.frame_surfaces.rear_frame_pnp]
 ...
 ```
 
-其中 `matrix_frame_to_camera` 是完整 4x4 齐次变换：
+其中 `point` 是取景框中心在相机坐标系下的位置，`x_axis`、`y_axis` 和
+`normal` 分别是取景框坐标系三个轴在相机坐标系下的方向。它们等价于
+原始 PnP 位姿中的旋转矩阵三列，只是以更直接的几何形式保存。
+
+如果需要恢复完整 4x4 齐次变换，可以按列拼出旋转矩阵：
 
 ```text
-P_camera_h = matrix_frame_to_camera @ P_frame_h
-```
-
-`matrix_camera_to_frame` 是它的逆：
-
-```text
-P_frame_h = matrix_camera_to_frame @ P_camera_h
+R_frame_to_camera = [x_axis, y_axis, normal]
+t_frame_to_camera = point
 ```
 
 
@@ -228,7 +230,7 @@ device coordinate = front frame coordinate
 ```
 
 原因是当前主测量流程最终会把激光点统一到前相机坐标系，前取景框坐标系
-通过 `front_frame_pose` 可以直接转到前相机坐标系，链路最短。
+通过 `front_frame_pnp` 可以直接转到前相机坐标系，链路最短。
 
 后取景框坐标系也有用，它可以作为后相机模块的局部设备坐标系。若后续需要把
 后取景框坐标系统一到前取景框坐标系，可以通过：
@@ -254,9 +256,14 @@ P_target_frame = [x, y, z, 1]
 如果采用前取景框坐标系作为设备坐标系，则目标点在前相机坐标系中为：
 
 ```text
-P_target_front_camera =
-    calibration.frames.front_frame_pose.matrix_frame_to_camera
-    @ P_target_frame
+R = [
+    calibration.frame_surfaces.front_frame_pnp.x_axis,
+    calibration.frame_surfaces.front_frame_pnp.y_axis,
+    calibration.frame_surfaces.front_frame_pnp.normal,
+]
+t = calibration.frame_surfaces.front_frame_pnp.point
+
+P_target_front_camera = R @ P_target_frame + t
 ```
 
 得到这个点后，就可以继续和已经统一到前相机坐标系的激光线一起计算距离。

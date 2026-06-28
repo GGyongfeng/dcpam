@@ -65,7 +65,7 @@ class SpotPair(BaseModel):
 
 
 class LaserAxis(BaseModel):
-    """激光轴线（两点定义），均在前相机坐标系 C1 下。"""
+    """激光轴线（两点定义），均在设备坐标系下。"""
     front: Point3D
     rear: Point3D
 

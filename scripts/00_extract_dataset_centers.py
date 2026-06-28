@@ -1,7 +1,7 @@
 """批量提取 dataset 中前后相机光斑圆心。
 
-输入是 dataset/L109D*-vN/front 与 rear 图片
-输出是版本化的 1-Spot-Center*.csv，作为后续三维反投影的像素坐标输入。
+输入是 dataset/L{测杆长度}D{距离}/front 与 rear 图片。
+输出是包含样本 name 的圆心 CSV，作为后续三维反投影的像素坐标输入。
 """
 from __future__ import annotations
 
@@ -20,8 +20,7 @@ from dcpam_cv.steps.spot_extraction import extract_spots
 
 class ImagePairPaths(BaseModel):
     """一组前后相机图片路径。"""
-    dataset_version: str
-    position_cm: int
+    name: str
     pair_index: int
     front_path: Path
     rear_path: Path
@@ -29,9 +28,7 @@ class ImagePairPaths(BaseModel):
 
 class CenterRecord(BaseModel):
     """一组图片的圆心提取结果。"""
-    dataset_version: str
-    position_cm: int
-    pair_index: int
+    name: str
     front_path: str
     front_u: float
     front_v: float
@@ -41,9 +38,10 @@ class CenterRecord(BaseModel):
 
 
 class DatasetGroup(BaseModel):
-    """一个距离位置下的版本化数据目录。"""
+    """一个距离位置下的数据目录。"""
+    folder_name: str
+    length_mm: int
     position_cm: int
-    version: str
 
 
 class DatasetCenterExtractor:
@@ -69,7 +67,7 @@ class DatasetCenterExtractor:
             group = _parse_group(group_dir.name)
             front_dir = group_dir / "front"
             rear_dir = group_dir / "rear"
-            if group is None or group.version != self.version:
+            if group is None:
                 continue
             if not front_dir.exists() or not rear_dir.exists():
                 continue
@@ -81,8 +79,7 @@ class DatasetCenterExtractor:
                     raise FileNotFoundError(f"缺少后相机图片: {rear_path}")
                 pairs.append(
                     ImagePairPaths(
-                        dataset_version=group.version,
-                        position_cm=group.position_cm,
+                        name=_sample_name(group, pair_index),
                         pair_index=pair_index,
                         front_path=front_path,
                         rear_path=rear_path,
@@ -95,9 +92,7 @@ class DatasetCenterExtractor:
         rear_image = _read_gray(pair.rear_path)
         spots = extract_spots(front_image, rear_image, self.config)
         return CenterRecord(
-            dataset_version=pair.dataset_version,
-            position_cm=pair.position_cm,
-            pair_index=pair.pair_index,
+            name=pair.name,
             front_path=str(pair.front_path),
             front_u=spots.front.u,
             front_v=spots.front.v,
@@ -105,6 +100,9 @@ class DatasetCenterExtractor:
             rear_u=spots.rear.u,
             rear_v=spots.rear.v,
         )
+
+    def _matches_version(self, group: DatasetGroup) -> bool:
+        return True
 
     def _write_csv(self, records: list[CenterRecord]) -> None:
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -124,13 +122,20 @@ def _read_gray(path: Path) -> np.ndarray:
 
 
 def _parse_group(name: str) -> DatasetGroup | None:
-    match = re.search(r"D(\d+)(?:-(v\d+))?$", name)
+    match = re.fullmatch(r"L(\d+)D(\d+)(?:-[A-Za-z0-9_]+)?", name)
     if match is None:
         return None
+    length_mm = int(match.group(1))
+    position_cm = int(match.group(2))
     return DatasetGroup(
-        position_cm=int(match.group(1)),
-        version=match.group(2) or "v1",
+        folder_name=name,
+        length_mm=length_mm,
+        position_cm=position_cm,
     )
+
+
+def _sample_name(group: DatasetGroup, pair_index: int) -> str:
+    return f"{group.folder_name}-{pair_index:02d}"
 
 
 def _path_sort_key(path: Path) -> tuple[str, int]:
@@ -142,7 +147,7 @@ def _path_sort_key(path: Path) -> tuple[str, int]:
 def main() -> None:
     parser = argparse.ArgumentParser(description="批量提取 dataset 前后相机光斑圆心")
     parser.add_argument("--dataset", type=Path, default=Path("dataset"))
-    parser.add_argument("--version", default="v1", help="数据版本，例如 v1 或 v2")
+    parser.add_argument("--version", default="all", help="保留兼容参数；当前默认处理全部数据目录")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
@@ -154,9 +159,7 @@ def main() -> None:
 
 
 def _default_output_path(dataset_dir: Path, version: str) -> Path:
-    if version == "v1":
-        return dataset_dir / "1-Spot-Center.csv"
-    return dataset_dir / f"1-Spot-Center-{version}.csv"
+    return dataset_dir / "1-Spot-Center.csv"
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@ import csv
 import tomllib
 from pathlib import Path
 
+import numpy as np
 from pydantic import BaseModel
 
 from dcpam_cv.config import AppConfig, load_config
@@ -85,9 +86,11 @@ class FramePoseCalibrationRunner:
 
     def _write_config(self, front: FramePoseEstimate, rear: FramePoseEstimate) -> None:
         raw = _read_toml(self.config_path)
-        frames = raw.setdefault("calibration", {}).setdefault("frames", {})
-        frames["front_frame_pose"] = _pose_config(front, self.frame_width_mm, self.frame_height_mm)
-        frames["rear_frame_pose"] = _pose_config(rear, self.frame_width_mm, self.frame_height_mm)
+        calibration = raw.setdefault("calibration", {})
+        calibration.pop("frames", None)
+        surfaces = calibration.setdefault("frame_surfaces", {})
+        surfaces["front_frame_pnp"] = _surface_config(front, self.frame_width_mm, self.frame_height_mm)
+        surfaces["rear_frame_pnp"] = _surface_config(rear, self.frame_width_mm, self.frame_height_mm)
         self.config_path.write_text(_render_toml(raw), encoding="utf-8")
 
     def _write_csv(self, records: list[FramePoseRecord]) -> None:
@@ -110,48 +113,51 @@ def _read_average_quadrilateral(path: Path) -> ImageQuadrilateral:
     )
 
 
-def _pose_config(estimate: FramePoseEstimate, width_mm: float, height_mm: float) -> dict:
-    matrix = _matrix_frame_to_camera(estimate)
+def _surface_config(estimate: FramePoseEstimate, width_mm: float, height_mm: float) -> dict:
+    rotation = estimate.pose.rotation_matrix()
+    translation = estimate.pose.translation_vector()
+    normal = _unit(rotation[:, 2])
+    corners = _frame_corners(rotation, translation, width_mm, height_mm)
     return {
-        "frame_width_mm": width_mm,
-        "frame_height_mm": height_mm,
-        "rotation_frame_to_camera": estimate.pose.rotation,
-        "translation_frame_to_camera": [
-            estimate.pose.translation.x,
-            estimate.pose.translation.y,
-            estimate.pose.translation.z,
-        ],
-        "matrix_frame_to_camera": matrix,
-        "matrix_camera_to_frame": _inverse_matrix(matrix),
+        "method": "pnp_frame_pose",
+        "width_mm": width_mm,
+        "height_mm": height_mm,
+        "point": _vector(translation),
+        "x_axis": _vector(_unit(rotation[:, 0])),
+        "y_axis": _vector(_unit(rotation[:, 1])),
+        "normal": _vector(normal),
+        "d": -float(normal @ translation),
+        "corners": [_vector(corner) for corner in corners],
         "reprojection_error_px": estimate.reprojection_error_px,
     }
 
 
-def _matrix_frame_to_camera(estimate: FramePoseEstimate) -> list[list[float]]:
-    rotation = estimate.pose.rotation_matrix()
-    translation = estimate.pose.translation_vector()
-    return [
-        [float(rotation[0, 0]), float(rotation[0, 1]), float(rotation[0, 2]), float(translation[0])],
-        [float(rotation[1, 0]), float(rotation[1, 1]), float(rotation[1, 2]), float(translation[1])],
-        [float(rotation[2, 0]), float(rotation[2, 1]), float(rotation[2, 2]), float(translation[2])],
-        [0.0, 0.0, 0.0, 1.0],
-    ]
+def _frame_corners(
+    rotation: np.ndarray,
+    translation: np.ndarray,
+    width_mm: float,
+    height_mm: float,
+) -> np.ndarray:
+    half_width = width_mm / 2.0
+    half_height = height_mm / 2.0
+    local = np.array(
+        [
+            [-half_width, -half_height, 0.0],
+            [half_width, -half_height, 0.0],
+            [half_width, half_height, 0.0],
+            [-half_width, half_height, 0.0],
+        ],
+        dtype=np.float64,
+    )
+    return (rotation @ local.T).T + translation
 
 
-def _inverse_matrix(matrix: list[list[float]]) -> list[list[float]]:
-    rotation = [row[:3] for row in matrix[:3]]
-    translation = [row[3] for row in matrix[:3]]
-    inverse_rotation = [[rotation[row][col] for row in range(3)] for col in range(3)]
-    inverse_translation = [
-        -sum(inverse_rotation[row][col] * translation[col] for col in range(3))
-        for row in range(3)
-    ]
-    return [
-        [*inverse_rotation[0], inverse_translation[0]],
-        [*inverse_rotation[1], inverse_translation[1]],
-        [*inverse_rotation[2], inverse_translation[2]],
-        [0.0, 0.0, 0.0, 1.0],
-    ]
+def _unit(vector: np.ndarray) -> np.ndarray:
+    return vector / float(np.linalg.norm(vector))
+
+
+def _vector(vector: np.ndarray) -> list[float]:
+    return [float(value) for value in vector]
 
 
 def _read_toml(path: Path) -> dict:

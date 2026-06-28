@@ -86,6 +86,7 @@ Thumbs.db
 output/
 dataset/
 captures/
+papers/
 
 # Reference materials (templates, calibration files)
 reference/

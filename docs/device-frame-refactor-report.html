@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DCPAM 设备坐标系统一重构报告</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7fb;
+      --panel: #ffffff;
+      --text: #16181d;
+      --muted: #6b7280;
+      --line: #d9dde7;
+      --accent: #1f6feb;
+      --accent-soft: #eaf1ff;
+      --removed: #b91c1c;
+      --removed-soft: #fef2f2;
+      --added: #047857;
+      --added-soft: #ecfdf5;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.65;
+    }
+
+    main {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 32px;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      height: 38px;
+      padding: 0 14px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--panel);
+      color: var(--text);
+      text-decoration: none;
+      font-weight: 700;
+      box-shadow: 0 8px 18px rgba(17, 24, 39, 0.05);
+    }
+
+    .back-link:hover {
+      border-color: #aeb5c4;
+    }
+
+    header {
+      margin-bottom: 24px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 32px;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin: 24px 0 14px;
+      font-size: 20px;
+    }
+
+    h3 {
+      margin: 18px 0 8px;
+      font-size: 16px;
+    }
+
+    p {
+      margin: 0 0 10px;
+    }
+
+    p.muted {
+      color: var(--muted);
+    }
+
+    code {
+      padding: 1px 5px;
+      border-radius: 5px;
+      background: #eef1f7;
+      color: #111827;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 13px;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 20px 22px;
+      margin: 14px 0;
+      box-shadow: 0 10px 30px rgba(17, 24, 39, 0.05);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin: 14px 0;
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    .pill.removed {
+      background: var(--removed-soft);
+      color: var(--removed);
+    }
+
+    .pill.added {
+      background: var(--added-soft);
+      color: var(--added);
+    }
+
+    .pill.kept {
+      background: var(--accent-soft);
+      color: #185abc;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 6px;
+      margin-top: 12px;
+    }
+
+    .flow .step {
+      display: flex;
+      gap: 12px;
+      align-items: baseline;
+      padding: 8px 12px;
+      border-left: 3px solid var(--accent);
+      background: var(--accent-soft);
+      border-radius: 0 8px 8px 0;
+    }
+
+    .flow .step .idx {
+      min-width: 22px;
+      font-weight: 800;
+      color: var(--accent);
+    }
+
+    .kvs {
+      display: grid;
+      grid-template-columns: minmax(160px, 220px) 1fr;
+      column-gap: 18px;
+      row-gap: 8px;
+      margin: 12px 0;
+    }
+
+    .kvs .k {
+      color: var(--muted);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 10px 0 14px;
+      font-size: 13px;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--muted);
+      font-weight: 700;
+      background: #fbfcff;
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .meta .tag {
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: #185abc;
+      font-weight: 700;
+    }
+
+    ul {
+      margin: 8px 0 0;
+      padding-left: 22px;
+    }
+
+    li {
+      margin: 4px 0;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="topbar">
+      <a class="back-link" href="index.html">← 返回时间轴</a>
+      <span class="meta"><span class="tag">重构</span><span>2026-06-10</span></span>
+    </div>
+    <header>
+      <h1>设备坐标系统一重构</h1>
+      <p class="muted">
+        把整个 pipeline 收敛到设备坐标系下闭环，废弃以双相机外参做坐标统一的旧路径；
+        CLI 实时测量、离线批处理脚本、Web 三维查看器、配置文件和文档全部对齐到同一套算法。
+      </p>
+    </header>
+
+    <section class="card">
+      <h2>动因</h2>
+      <p>
+        旧版本在 <code>config.toml</code> 里保存了
+        <code>[calibration.transform]</code>，也就是后相机相对前相机的刚体外参
+        <code>R_rear_from_front</code> 与
+        <code>t_rear_from_front</code>，并在测量流程中用它把后相机系下的虚像点搬到前相机系，
+        以前相机系作为统一坐标系完成最终的点到激光线距离计算。
+      </p>
+      <p>
+        问题在于这套外参由微距镜头标定得到，两相机当时无法对同一像面同时合焦，
+        矩阵本身可靠性不足。整条主链路对它的依赖使得任何系统误差都会被直接放大到距离结果上。
+      </p>
+      <p>
+        新链路改用取景框 PnP 位姿和设备坐标系下的设备实像面之间的对齐关系，
+        把两侧的实像点各自直接搬入设备坐标系，再在设备坐标系内完成镜像反射与距离计算。
+        外参矩阵不再出现在任何主链路代码或配置里。
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>新的 5 步设备坐标系流程</h2>
+      <div class="flow">
+        <div class="step"><span class="idx">1</span><div><strong>提取圆心</strong>：前后相机图像分别得到光斑中心像素坐标。</div></div>
+        <div class="step"><span class="idx">2</span><div><strong>反投影到 PnP 实像面</strong>：用各自内参反投影为相机系下的射线，与 <code>frame_surfaces.{front,rear}_frame_pnp</code> 求交，得到相机系下的实像点。</div></div>
+        <div class="step"><span class="idx">3</span><div><strong>实像点入设备系</strong>：用取景框 PnP 与 <code>device.geometry.{front,rear}_frame</code> 的对齐变换，把实像点搬到设备坐标系。</div></div>
+        <div class="step"><span class="idx">4</span><div><strong>设备系镜像反射</strong>：在设备坐标系内用 <code>device.geometry.{front,rear}_reflection</code> 对实像点做镜像，得到虚像点。</div></div>
+        <div class="step"><span class="idx">5</span><div><strong>距离计算</strong>：以 <code>device.geometry.probe_rod.root + length</code> 给出的靶点和两虚像点定义的激光线，求点到直线距离。</div></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>变更清单</h2>
+      <h3>配置</h3>
+      <table>
+        <thead><tr><th style="width:48%">改动</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td><span class="pill removed">移除</span> <code>[calibration.transform]</code></td><td>从 <code>config.toml</code> 和 <code>defaults.py</code> 中移除外参 R/t/baseline_norm 段。</td></tr>
+          <tr><td><span class="pill kept">保留</span> <code>[calibration.frame_surfaces.*]</code></td><td>前后取景框 PnP 结果，作为相机系到设备系的桥梁。</td></tr>
+          <tr><td><span class="pill kept">保留</span> <code>[device.geometry.*]</code></td><td>设备坐标系下的实像面 / 反射面 / 探测杆，作为主算法直接消费的几何。</td></tr>
+        </tbody>
+      </table>
+
+      <h3>代码</h3>
+      <table>
+        <thead><tr><th style="width:48%">改动</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td><span class="pill removed">删除</span> <code>dcpam_cv/config.py: TransformConfig</code></td><td>同步删除 <code>CalibrationConfig.transform</code> 字段。</td></tr>
+          <tr><td><span class="pill removed">删除</span> <code>dcpam_cv/steps/coordinate_transform.py</code></td><td>原先承担 C2→C1 的 <code>rear_to_front</code> 函数随之移除。</td></tr>
+          <tr><td><span class="pill added">重写</span> <code>dcpam_cv/optical_geometry.py</code></td><td>新增 <code>CameraToDeviceTransform</code>；<code>OpticalGeometry</code> 直接输出设备系下的反射面、靶点和两条相机↔设备变换。</td></tr>
+          <tr><td><span class="pill added">重写</span> <code>dcpam_cv/pipeline.py</code></td><td>CLI 主链路改为上文 5 步设备坐标系流程，输出仍为 <code>MeasurementResult</code>。</td></tr>
+          <tr><td><span class="pill added">合并</span> <code>scripts/20_project_spot_centers.py</code></td><td>删除旧的 20（外参法）与 21（设备坐标系法），合并为单一脚本，复用 <code>OpticalGeometry</code>。</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Web 端</h3>
+      <table>
+        <thead><tr><th style="width:48%">改动</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td><span class="pill added">重写</span> 样本步骤面板</td><td>由"反投影 → 镜像 → 外参转化 → 求距"五步改为"反投影 → 入设备系 → 设备系镜像 → 求距"五步。</td></tr>
+          <tr><td><span class="pill added">兼容</span> 新 CSV 列名</td><td><code>pointFromRow</code> 优先解析 <code>*_point_device_mm</code> 这类 JSON 字符串列；显示阶段经 <code>deviceAlignment</code> 转入 C1 显示空间。</td></tr>
+          <tr><td><span class="pill removed">删除</span> 外参校验 C2 相机图层</td><td>包括 <code>externalCamera</code> 图层勾选框、<code>makeExternalRearToFrontTransform</code>、<code>makeAlignmentDiagnostics</code> 及其在 SceneView 里的绘制与详情面板。</td></tr>
+          <tr><td><span class="pill added">修正</span> 旧样本图片路径</td><td>L109 样本图片路径指向 <code>reference/archive/dataset/L109D*</code>。</td></tr>
+        </tbody>
+      </table>
+
+      <h3>文档</h3>
+      <table>
+        <thead><tr><th style="width:48%">改动</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td><span class="pill removed">删除</span> <code>docs/calibrated-coordinate-unification.md</code></td><td>旧版坐标统一说明文档整篇废弃。</td></tr>
+          <tr><td><span class="pill added">重写</span> <code>docs/architecture.md</code></td><td>精简为模块划分 + 实时/离线数据流 + 配置布局。</td></tr>
+          <tr><td><span class="pill added">改写</span> <code>docs/dcpam-core-algorithm.md</code></td><td>第 3/4/5/7/8 节去掉 C2→C1 那条线，改为设备坐标系统一。</td></tr>
+          <tr><td><span class="pill added">改写</span> <code>docs/camera-plane-constraint-model.md</code></td><td>四条核心关系收敛为三条，删除 C1-C2 闭环校验路径。</td></tr>
+          <tr><td><span class="pill added">改写</span> <code>docs/calibration-toml-geometry.md</code></td><td>"相机坐标系统一"小节改为依赖 PnP + 设备实像面对齐。</td></tr>
+        </tbody>
+      </table>
+
+      <h3>数据归档</h3>
+      <p>
+        <code>dataset/L109*</code>、<code>dataset/L174*</code> 系列原始图像与
+        <code>dataset/spot-measurements.csv</code>（旧外参 pipeline 产出）整体移入
+        <code>reference/archive/dataset/</code>。新设备坐标系版的 device CSV
+        改名为 <code>spot-measurements-短测杆.csv</code>，也放入归档目录。
+        归档根下新增 <code>README.md</code> 说明数据来源与废弃原因。
+        当前 <code>dataset/</code> 只保留正在使用的长测杆数据
+        （<code>L600D*-0625</code>）、取景框图像、关节臂标定数据，
+        以及今后由新脚本生成的 <code>spot-measurements.csv</code>。
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>等效性验证</h2>
+      <p>
+        用新 CLI 与新离线脚本对同一组归档图像复跑测量，并与归档的设备坐标系版
+        CSV 逐行比对：
+      </p>
+      <div class="kvs">
+        <div class="k">归档 device CSV 行数</div><div>178</div>
+        <div class="k">新脚本输出行数</div><div>178</div>
+        <div class="k">首行距离（旧 device CSV）</div><div><code>266.5723862447 mm</code></div>
+        <div class="k">首行距离（新脚本输出）</div><div><code>266.5723862447 mm</code></div>
+        <div class="k">CLI 实测样本 L109D40-01</div><div>distance ≈ <code>267.20 mm</code>，与同口径离线结果一致</div>
+        <div class="k">残留对 <code>calibration.transform</code> 的引用</div><div>仅文档历史说明一处；代码与配置零引用</div>
+      </div>
+      <p class="muted">
+        即新链路与归档里的设备坐标系版数值完全一致，CLI 与离线脚本同口径产出，
+        改动属于"算法切换 + 配置收敛"，不改变设备坐标系版的数值结果。
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>对照报告</h2>
+      <p>
+        新旧两套 pipeline 的稳定性差异详见
+        <a href="pipeline-comparison-report.html">相机外参统一法 vs 设备坐标系统一法</a>
+        这份报告，输入数据正是本次归档的两份 CSV。
+      </p>
+    </section>
+  </main>
+</body>
+</html>
