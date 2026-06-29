@@ -65,11 +65,11 @@ class DatasetCenterExtractor:
             if not group_dir.is_dir():
                 continue
             group = _parse_group(group_dir.name)
-            front_dir = group_dir / "front"
-            rear_dir = group_dir / "rear"
             if group is None:
                 continue
-            if not front_dir.exists() or not rear_dir.exists():
+            front_dir = _resolve_subdir(group_dir, ("front",))
+            rear_dir = _resolve_subdir(group_dir, ("rear", "roar"))
+            if front_dir is None or rear_dir is None:
                 continue
 
             for front_path in sorted(front_dir.glob("*.bmp"), key=_path_sort_key):
@@ -142,6 +142,15 @@ def _path_sort_key(path: Path) -> tuple[str, int]:
     if path.stem.isdigit():
         return path.parent.name, int(path.stem)
     return path.name, -1
+
+
+def _resolve_subdir(parent: Path, aliases: tuple[str, ...]) -> Path | None:
+    """大小写不敏感地匹配子目录；aliases 还覆盖常见拼写错误（如 roar）。"""
+    aliases_lower = {alias.lower() for alias in aliases}
+    for child in parent.iterdir():
+        if child.is_dir() and child.name.lower() in aliases_lower:
+            return child
+    return None
 
 
 def main() -> None:
