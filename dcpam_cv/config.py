@@ -62,17 +62,11 @@ class PlaneCalibrationConfig(BaseModel):
 
 
 class FrameSurfaceConfig(BaseModel):
-    """PnP 得到的取景框平面与角点。"""
+    """PnP 得到的取景框平面（相机坐标系下，仅 pipeline 反投影使用的字段）。"""
     method: str = "pnp_frame_pose"
-    width_mm: float
-    height_mm: float
     point: tuple[float, float, float]
-    x_axis: tuple[float, float, float]
-    y_axis: tuple[float, float, float]
     normal: tuple[float, float, float]
     d: float
-    corners: list[tuple[float, float, float]]
-    reprojection_error_px: float
 
 
 class FrameSurfaceCalibrationConfig(BaseModel):
@@ -81,12 +75,20 @@ class FrameSurfaceCalibrationConfig(BaseModel):
     rear_frame_pnp: FrameSurfaceConfig | None = None
 
 
+class CameraToDeviceConfig(BaseModel):
+    """相机坐标系 → 设备坐标系的刚体变换：p_device = R @ p_camera + t。"""
+    rotation: list[tuple[float, float, float]]  # 3x3, 按行
+    translation: tuple[float, float, float]
+
+
 class CalibrationConfig(BaseModel):
     """完整标定配置。"""
     front_camera: CameraIntrinsics
     rear_camera: CameraIntrinsics
     planes: PlaneCalibrationConfig = PlaneCalibrationConfig()
     frame_surfaces: FrameSurfaceCalibrationConfig = FrameSurfaceCalibrationConfig()
+    front_camera_to_device: CameraToDeviceConfig | None = None
+    rear_camera_to_device: CameraToDeviceConfig | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -110,19 +112,6 @@ class PipelineConfig(BaseModel):
 # Device config
 # ---------------------------------------------------------------------------
 
-class ViewFrameGeometryConfig(BaseModel):
-    """取景框透光矩形尺寸。"""
-    width_mm: float
-    height_mm: float
-
-
-class DeviceFrameGeometryConfig(BaseModel):
-    """设备坐标系下的取景框平面。"""
-    point: tuple[float, float, float]
-    normal: tuple[float, float, float]
-    rect_corners: list[tuple[float, float, float]]
-
-
 class DeviceReflectionGeometryConfig(BaseModel):
     """设备坐标系下的反射平面。"""
     point: tuple[float, float, float]
@@ -137,9 +126,6 @@ class ProbeRodGeometryConfig(BaseModel):
 
 class DeviceGeometryConfig(BaseModel):
     """算法关心的设备几何。"""
-    view_frame: ViewFrameGeometryConfig
-    front_frame: DeviceFrameGeometryConfig
-    rear_frame: DeviceFrameGeometryConfig
     front_reflection: DeviceReflectionGeometryConfig
     rear_reflection: DeviceReflectionGeometryConfig
     probe_rod: ProbeRodGeometryConfig

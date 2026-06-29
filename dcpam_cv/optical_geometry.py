@@ -4,8 +4,8 @@ import numpy as np
 
 from .config import (
     CalibrationConfig,
+    CameraToDeviceConfig,
     DeviceConfig,
-    DeviceFrameGeometryConfig,
     DeviceReflectionGeometryConfig,
     FrameSurfaceConfig,
     PlaneConfig,
@@ -13,52 +13,12 @@ from .config import (
 from .types import Point3D
 
 
-class DeviceToCameraTransform:
-    """设备坐标系到单个相机坐标系的刚体变换。"""
-
-    def __init__(
-        self,
-        device_frame: DeviceFrameGeometryConfig,
-        camera_frame: FrameSurfaceConfig,
-    ) -> None:
-        source_rotation = _basis(
-            device_frame.rect_corners[1],
-            device_frame.rect_corners[0],
-            device_frame.rect_corners[3],
-            device_frame.normal,
-        )
-        target_rotation = _basis(
-            camera_frame.x_axis,
-            (0.0, 0.0, 0.0),
-            camera_frame.y_axis,
-            camera_frame.normal,
-        )
-        self.rotation = target_rotation @ source_rotation.T
-        self.translation = np.array(camera_frame.point, dtype=np.float64) - self.rotation @ np.array(
-            device_frame.point,
-            dtype=np.float64,
-        )
-
-    def point(self, value: tuple[float, float, float]) -> np.ndarray:
-        """变换设备坐标系下的点。"""
-        return self.rotation @ np.array(value, dtype=np.float64) + self.translation
-
-    def vector(self, value: tuple[float, float, float]) -> np.ndarray:
-        """变换设备坐标系下的方向向量。"""
-        return _unit(self.rotation @ np.array(value, dtype=np.float64))
-
-
 class CameraToDeviceTransform:
-    """单个相机坐标系到设备坐标系的刚体变换。"""
+    """相机坐标系 → 设备坐标系的刚体变换。直接读 config 里预先算好的 R, t。"""
 
-    def __init__(
-        self,
-        device_frame: DeviceFrameGeometryConfig,
-        camera_frame: FrameSurfaceConfig,
-    ) -> None:
-        device_to_camera = DeviceToCameraTransform(device_frame, camera_frame)
-        self.rotation = device_to_camera.rotation.T
-        self.translation = -self.rotation @ device_to_camera.translation
+    def __init__(self, config: CameraToDeviceConfig) -> None:
+        self.rotation = np.array(config.rotation, dtype=np.float64)
+        self.translation = np.array(config.translation, dtype=np.float64)
 
     def point(self, value: Point3D) -> Point3D:
         """将相机坐标系下的点变换到设备坐标系。"""
@@ -74,11 +34,13 @@ class OpticalGeometry:
         rear_frame = calibration.frame_surfaces.rear_frame_pnp
         if front_frame is None or rear_frame is None:
             raise ValueError("配置缺少 PnP 实像面，无法构建光学几何")
+        if calibration.front_camera_to_device is None or calibration.rear_camera_to_device is None:
+            raise ValueError("配置缺少 camera_to_device 变换，先跑 scripts/10_estimate_frame_poses.py")
 
         self.front_image_real = _plane_from_frame(front_frame)
         self.rear_image_real = _plane_from_frame(rear_frame)
-        self.front_camera_to_device = CameraToDeviceTransform(device.geometry.front_frame, front_frame)
-        self.rear_camera_to_device = CameraToDeviceTransform(device.geometry.rear_frame, rear_frame)
+        self.front_camera_to_device = CameraToDeviceTransform(calibration.front_camera_to_device)
+        self.rear_camera_to_device = CameraToDeviceTransform(calibration.rear_camera_to_device)
         self.front_reflection = _plane_from_device(device.geometry.front_reflection)
         self.rear_reflection = _plane_from_device(device.geometry.rear_reflection)
         self.target_point = _probe_target(device)
@@ -111,18 +73,6 @@ def _probe_target(device: DeviceConfig) -> Point3D:
         y=root_y,
         z=root_z - device.geometry.probe_rod.length_mm,
     )
-
-
-def _basis(
-    x_point: tuple[float, float, float],
-    origin: tuple[float, float, float],
-    y_point: tuple[float, float, float],
-    normal: tuple[float, float, float],
-) -> np.ndarray:
-    x_axis = _unit(np.array(x_point, dtype=np.float64) - np.array(origin, dtype=np.float64))
-    z_axis = _unit(np.array(normal, dtype=np.float64))
-    y_axis = _unit(np.array(y_point, dtype=np.float64) - np.array(origin, dtype=np.float64))
-    return np.column_stack([x_axis, y_axis, z_axis])
 
 
 def _unit(vector: np.ndarray) -> np.ndarray:

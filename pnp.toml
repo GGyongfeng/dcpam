@@ -1,0 +1,26 @@
+# PnP 标定阶段的设备端约定。
+#
+# 用途：scripts/10_estimate_frame_poses.py 在执行 PnP 求解后，
+# 用这里的"设备端约定"把 PnP 给出的"相机⇄取景框"姿态拼成
+# "相机⇄设备"的刚体变换，写入 config.toml.calibration.{front,rear}_camera_to_device。
+#
+# 这些约定只在标定时被消费；pipeline 运行时不再读取本文件。
+
+# 设备坐标系下的物理取景框尺寸。PnP 求解时也用到这两个值定义 object points。
+[frame]
+width_mm = 22.0
+height_mm = 17.0
+
+# 前取景框：把设备坐标原点放在前框中心，z 轴朝相机方向。
+[front_frame]
+point = [0.0, 0.0, 0.0]
+normal = [0.0, 0.0, 1.0]
+# 框平面内的 x 轴方向（设备坐标系单位向量）。
+# 框平面内的 y 轴由 normal × x_axis 自动正交化。
+x_axis = [1.0, 0.0, 0.0]
+
+# 后取景框：相对前框沿 +x 偏移 80 mm，与前框平行（设计约定）。
+[rear_frame]
+point = [80.0, 0.0, 0.0]
+normal = [0.0, 0.0, 1.0]
+x_axis = [1.0, 0.0, 0.0]
