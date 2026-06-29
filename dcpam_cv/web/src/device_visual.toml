@@ -5,11 +5,23 @@ z_range = [-132.0, 42.0]
 corner_radius_mm = 3.0
 
 [device_visual.view_frame]
+inner_width_mm = 22.0
+inner_height_mm = 17.0
 inner_radius_mm = 1.5
 outer_width_mm = 46.0
 outer_height_mm = 47.0
 outer_radius_mm = 2.5
 thickness_mm = 2.0
+
+# 设备坐标系下前后两个取景框中心。
+# 前框中心 = 设备坐标原点；后框相对前框沿 +x 偏移 80 mm。
+[device_visual.front_frame]
+center = [0.0, 0.0, 0.0]
+normal = [0.0, 0.0, 1.0]
+
+[device_visual.rear_frame]
+center = [80.0, 0.0, 0.0]
+normal = [0.0, 0.0, 1.0]
 
 [device_visual.frosted_glass]
 thickness_mm = 3.0

@@ -31,14 +31,8 @@ export function buildGeometry(config, algorithm = {}) {
     device,
     deviceAlignment,
   );
-  const frontCameraToDevice = makeCameraToDeviceTransform(
-    device.frames?.[0],
-    calibration.frame_surfaces?.front_frame_pnp,
-  );
-  const rearCameraToDevice = makeCameraToDeviceTransform(
-    device.frames?.[1],
-    calibration.frame_surfaces?.rear_frame_pnp,
-  );
+  const frontCameraToDevice = makeCameraToDeviceTransform(calibration.front_camera_to_device);
+  const rearCameraToDevice = makeCameraToDeviceTransform(calibration.rear_camera_to_device);
   const rearAxis = makeOpticalAxis(
     "C2 光轴",
     rearDisplayTransform.transformPoint([0, 0, 0]),
@@ -129,39 +123,25 @@ function makeCoordinateFrames(deviceAlignment, cameras, frames) {
   ].filter(Boolean);
 }
 
-function makeCameraToDeviceTransform(deviceFrame, cameraFrame) {
-  if (!deviceFrame || !cameraFrame) return null;
-  const corners = deviceFrame.rectCorners?.map(fromPoint);
-  if (!corners || corners.length < 4) return null;
-  const cameraOrigin = (cameraFrame.point || [0, 0, 0]).map(Number);
-  const deviceOrigin = fromPoint(deviceFrame.center);
-  const cameraBasis = basisMatrix([
-    cameraFrame.x_axis || [1, 0, 0],
-    cameraFrame.y_axis || [0, 1, 0],
-    cameraFrame.normal || [0, 0, 1],
-  ]);
-  const deviceBasis = basisMatrix([
-    subtract(corners[1], corners[0]),
-    subtract(corners[3], corners[0]),
-    fromPoint(deviceFrame.normal),
-  ]);
-  const rotation = matrixMul3(deviceBasis, transpose3(cameraBasis));
-  const offset = subtract(deviceOrigin, matrixVectorMul(rotation, cameraOrigin));
-  return (point) => add3(matrixVectorMul(rotation, point.map(Number)), offset);
+function makeCameraToDeviceTransform(config) {
+  if (!config) return null;
+  const rotation = (config.rotation || []).map((row) => row.map(Number));
+  if (rotation.length !== 3 || rotation.some((row) => row.length !== 3)) return null;
+  const translation = (config.translation || [0, 0, 0]).map(Number);
+  return (point) => add3(matrixVectorMul(rotation, point.map(Number)), translation);
 }
 
 function makeDeviceAlignment(mode, calibration, device) {
   const frontFrame = device.frames?.[0];
   const sourcePoint = fromPoint(frontFrame?.center || { x: 0, y: 0, z: 0 });
-  if (mode === "pnp" && calibration.frame_surfaces?.front_frame_pnp) {
-    return makeTransformFromAxes(
-      "PnP",
-      sourcePoint,
-      calibration.frame_surfaces.front_frame_pnp.point,
-      calibration.frame_surfaces.front_frame_pnp.x_axis,
-      calibration.frame_surfaces.front_frame_pnp.y_axis,
-      calibration.frame_surfaces.front_frame_pnp.normal,
-    );
+  const cameraToDevice = calibration.front_camera_to_device;
+  if (mode === "pnp" && cameraToDevice) {
+    // 把 device frame 中心 (sourcePoint) 对到设备坐标系下相同位置，并按 camera_to_device 设置朝向。
+    const rotation = (cameraToDevice.rotation || []).map((row) => row.map(Number));
+    const xAxis = [rotation[0][0], rotation[1][0], rotation[2][0]];
+    const yAxis = [rotation[0][1], rotation[1][1], rotation[2][1]];
+    const zAxis = [rotation[0][2], rotation[1][2], rotation[2][2]];
+    return makeTransformFromAxes("PnP", sourcePoint, sourcePoint, xAxis, yAxis, zAxis);
   }
   return makeTransformFromAxes("PnP", sourcePoint, sourcePoint, [1, 0, 0], [0, 1, 0], [0, 0, 1]);
 }
@@ -169,8 +149,11 @@ function makeDeviceAlignment(mode, calibration, device) {
 function makeRearCameraDisplayTransform(calibration, device, alignment) {
   const rearFrame = device.frames?.[1];
   const surface = calibration.frame_surfaces?.rear_frame_pnp;
-  if (!rearFrame || !surface) {
-    throw new Error("config.toml 缺少 rear_frame_pnp 或 device.geometry.rear_frame，无法构建后相机显示变换");
+  const cameraToDevice = calibration.rear_camera_to_device;
+  if (!rearFrame || !surface || !cameraToDevice) {
+    throw new Error(
+      "config.toml 缺少 rear_frame_pnp / rear_camera_to_device，或 device_visual.toml 缺少 rear_frame，无法构建后相机显示变换",
+    );
   }
   const targetPoint = alignment.transformPoint(fromPoint(rearFrame.center));
   const targetAxes = {
@@ -178,10 +161,14 @@ function makeRearCameraDisplayTransform(calibration, device, alignment) {
     y: alignment.transformNormal([0, 1, 0]),
     z: alignment.transformNormal(fromPoint(rearFrame.normal)),
   };
+  const rotation = (cameraToDevice.rotation || []).map((row) => row.map(Number));
+  const xAxis = [rotation[0][0], rotation[1][0], rotation[2][0]];
+  const yAxis = [rotation[0][1], rotation[1][1], rotation[2][1]];
+  const zAxis = [rotation[0][2], rotation[1][2], rotation[2][2]];
   return makeTransformBetweenAxes(
     "P2 PnP-设备面对齐",
     surface.point || [0, 0, 0],
-    [surface.x_axis || [1, 0, 0], surface.y_axis || [0, 1, 0], surface.normal || [0, 0, 1]],
+    [xAxis, yAxis, zAxis],
     targetPoint,
     [targetAxes.x, targetAxes.y, targetAxes.z],
   );
@@ -241,13 +228,13 @@ function basisMatrix(axes) {
 
 function makeDeviceGeometry(raw) {
   const visual = DEVICE_VISUAL;
-  const viewFrame = makeViewFrameSpec(raw.view_frame || {}, visual.view_frame || {});
+  const viewFrame = makeViewFrameSpec(visual.view_frame || {});
   return {
     basePlate: makeBasePlateSpec(visual.base_plate || {}),
     frostedGlass: { thickness: numberOr(visual.frosted_glass?.thickness_mm, 3) },
     frames: [
-      makeDeviceFrame("front", raw.front_frame || {}, viewFrame, 0),
-      makeDeviceFrame("rear", raw.rear_frame || {}, viewFrame, 80),
+      makeDeviceFrame("front", visual.front_frame || {}, viewFrame, 0),
+      makeDeviceFrame("rear", visual.rear_frame || {}, viewFrame, 80),
     ],
     probeRod: makeProbeRodSpec(raw.probe_rod || {}, visual.probe_rod || {}),
     reflections: [
@@ -258,11 +245,11 @@ function makeDeviceGeometry(raw) {
   };
 }
 
-function makeViewFrameSpec(raw, visual) {
+function makeViewFrameSpec(visual) {
   return {
-    innerHeight: numberOr(raw.height_mm, 17),
+    innerHeight: numberOr(visual.inner_height_mm, 17),
     innerRadius: numberOr(visual.inner_radius_mm, 1.5),
-    innerWidth: numberOr(raw.width_mm, 22),
+    innerWidth: numberOr(visual.inner_width_mm, 22),
     outerHeight: numberOr(visual.outer_height_mm, 47),
     outerRadius: numberOr(visual.outer_radius_mm, 2.5),
     outerWidth: numberOr(visual.outer_width_mm, 46),
@@ -282,16 +269,16 @@ function makeBasePlateSpec(raw) {
   };
 }
 
-function makeDeviceFrame(label, raw, viewFrame, fallbackX) {
-  const center = pointFromArray(raw.point, [fallbackX, 0, 0]);
-  const normal = pointFromArray(raw.normal, [0, 0, 1]);
+function makeDeviceFrame(label, visual, viewFrame, fallbackX) {
+  const center = pointFromArray(visual.center, [fallbackX, 0, 0]);
+  const normal = pointFromArray(visual.normal, [0, 0, 1]);
   return {
     center,
     d: -dot(fromPoint(normal), fromPoint(center)),
     label,
     normal,
     outerCorners: frameCorners(center, viewFrame.outerWidth, viewFrame.outerHeight).map(toPoint),
-    rectCorners: pointListFromArray(raw.rect_corners, frameCorners(center, viewFrame.innerWidth, viewFrame.innerHeight)),
+    rectCorners: frameCorners(center, viewFrame.innerWidth, viewFrame.innerHeight).map(toPoint),
   };
 }
 
