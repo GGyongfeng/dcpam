@@ -31,6 +31,14 @@ export function buildGeometry(config, algorithm = {}) {
     device,
     deviceAlignment,
   );
+  const frontCameraToDevice = makeCameraToDeviceTransform(
+    device.frames?.[0],
+    calibration.frame_surfaces?.front_frame_pnp,
+  );
+  const rearCameraToDevice = makeCameraToDeviceTransform(
+    device.frames?.[1],
+    calibration.frame_surfaces?.rear_frame_pnp,
+  );
   const rearAxis = makeOpticalAxis(
     "C2 光轴",
     rearDisplayTransform.transformPoint([0, 0, 0]),
@@ -71,6 +79,8 @@ export function buildGeometry(config, algorithm = {}) {
     planes,
     frames,
     rearCameraDisplayTransform: rearDisplayTransform,
+    frontCameraToDevice,
+    rearCameraToDevice,
     opticalAxes: [frontAxis, rearAxis],
     cameras,
     coordinateFrames: makeCoordinateFrames(deviceAlignment, cameras, frames),
@@ -117,6 +127,27 @@ function makeCoordinateFrames(deviceAlignment, cameras, frames) {
       length: 9,
     } : null,
   ].filter(Boolean);
+}
+
+function makeCameraToDeviceTransform(deviceFrame, cameraFrame) {
+  if (!deviceFrame || !cameraFrame) return null;
+  const corners = deviceFrame.rectCorners?.map(fromPoint);
+  if (!corners || corners.length < 4) return null;
+  const cameraOrigin = (cameraFrame.point || [0, 0, 0]).map(Number);
+  const deviceOrigin = fromPoint(deviceFrame.center);
+  const cameraBasis = basisMatrix([
+    cameraFrame.x_axis || [1, 0, 0],
+    cameraFrame.y_axis || [0, 1, 0],
+    cameraFrame.normal || [0, 0, 1],
+  ]);
+  const deviceBasis = basisMatrix([
+    subtract(corners[1], corners[0]),
+    subtract(corners[3], corners[0]),
+    fromPoint(deviceFrame.normal),
+  ]);
+  const rotation = matrixMul3(deviceBasis, transpose3(cameraBasis));
+  const offset = subtract(deviceOrigin, matrixVectorMul(rotation, cameraOrigin));
+  return (point) => add3(matrixVectorMul(rotation, point.map(Number)), offset);
 }
 
 function makeDeviceAlignment(mode, calibration, device) {
@@ -270,8 +301,11 @@ function makeProbeRodSpec(raw, visual) {
   const length = numberOr(raw.length_mm, 109);
   const target = toPoint(add3(fromPoint(root), scale3(direction, length)));
   return {
-    connectorLength: numberOr(visual.connector_length_mm, 8),
-    connectorRadius: numberOr(visual.connector_radius_mm, 13),
+    connectorDepth: numberOr(visual.connector_depth_mm, 40),
+    connectorCrossBarWidth: numberOr(visual.connector_cross_bar_width_mm, 10),
+    connectorCrossBarHeight: numberOr(visual.connector_cross_bar_height_mm, 3),
+    connectorStemWidth: numberOr(visual.connector_stem_width_mm, 4),
+    connectorStemExtension: numberOr(visual.connector_stem_extension_mm, 5),
     length,
     rodRadius: numberOr(visual.rod_radius_mm, 0.9),
     root,
@@ -304,25 +338,6 @@ function frameCorners(center, width, height) {
     [center.x + halfWidth, center.y + halfHeight, center.z],
     [center.x - halfWidth, center.y + halfHeight, center.z],
   ];
-}
-
-export function pointFromRow(row, prefix, suffix) {
-  const jsonCell = row[`${prefix}_point_device_mm`];
-  if (typeof jsonCell === "string" && jsonCell.trim().startsWith("[")) {
-    try {
-      const parsed = JSON.parse(jsonCell);
-      if (Array.isArray(parsed) && parsed.length >= 3 && parsed.every((value) => Number.isFinite(Number(value)))) {
-        return { x: Number(parsed[0]), y: Number(parsed[1]), z: Number(parsed[2]), space: "device" };
-      }
-    } catch {
-      // fall through to legacy column layout
-    }
-  }
-  const x = Number(row[`${prefix}_x_${suffix}`]);
-  const y = Number(row[`${prefix}_y_${suffix}`]);
-  const z = Number(row[`${prefix}_z_${suffix}`]);
-  if (![x, y, z].every(Number.isFinite)) return null;
-  return { x, y, z, space: suffix === "cr" ? "camera_rear" : "camera_front" };
 }
 
 export function toVector3(point) {

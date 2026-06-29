@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 import { SceneView } from "./SceneView.jsx";
-import { buildGeometry, pointFromRow } from "./geometry.js";
+import { buildGeometry } from "./geometry.js";
+import { measureRow } from "./pipeline.js";
 import { normalizeMeasurementRow, parseCsv, parseToml } from "./parsers.js";
 import { useStoredText } from "./storage.js";
 
@@ -105,18 +106,30 @@ export function App() {
     () => parseCsv(csvText).map(normalizeMeasurementRow).filter((row) => row.name),
     [csvText],
   );
-  const geometryState = useMemo(() => {
-    if (!tomlText) return { error: "", geometry: null };
+  const tomlConfig = useMemo(() => {
+    if (!tomlText) return null;
     try {
-      return { error: "", geometry: buildGeometry(parseToml(tomlText), DEFAULT_ALGORITHM) };
+      return parseToml(tomlText);
+    } catch {
+      return null;
+    }
+  }, [tomlText]);
+  const geometryState = useMemo(() => {
+    if (!tomlConfig) return { error: "", geometry: null };
+    try {
+      return { error: "", geometry: buildGeometry(tomlConfig, DEFAULT_ALGORITHM) };
     } catch (error) {
       return { error: error instanceof Error ? error.message : String(error), geometry: null };
     }
-  }, [tomlText]);
+  }, [tomlConfig]);
   const geometry = geometryState.geometry;
   const selectedRow = useMemo(
     () => rows.find((row) => row.name === selectedName) || rows[0] || null,
     [rows, selectedName],
+  );
+  const measurement = useMemo(
+    () => measureRow(selectedRow, geometry, tomlConfig),
+    [selectedRow, geometry, tomlConfig],
   );
   const visibleLayers = useMemo(() => ({ ...DEFAULT_LAYERS, ...layers }), [layers]);
 
@@ -186,6 +199,7 @@ export function App() {
       <section className="viewer">
         <SceneView
           rows={selectedRow ? [selectedRow] : []}
+          measurement={measurement}
           geometry={geometry}
           layers={visibleLayers}
         />
@@ -194,11 +208,12 @@ export function App() {
       </section>
       <aside className="sample-drawer">
         <SamplePanel
-          geometry={geometry}
+          measurement={measurement}
           row={selectedRow}
           rows={rows}
           selectedName={selectedRow?.name || ""}
           setSelectedName={setSelectedName}
+          tomlConfig={tomlConfig}
         />
       </aside>
     </main>
@@ -247,9 +262,12 @@ function HeaderActions({ clearCache, csvName, onCsv, onToml, tomlName }) {
   );
 }
 
-function SamplePanel({ geometry, row, rows, selectedName, setSelectedName }) {
+function SamplePanel({ measurement, row, rows, selectedName, setSelectedName, tomlConfig }) {
   const images = imagePaths(row);
-  const steps = calculationSteps(row, geometry);
+  const steps = calculationSteps(row, measurement);
+  const calibration = tomlConfig?.calibration || tomlConfig;
+  const frontResolution = calibration?.front_camera?.resolution;
+  const rearResolution = calibration?.rear_camera?.resolution;
   return (
     <section className="section sample-panel">
       <div className="section-title-row">
@@ -259,8 +277,18 @@ function SamplePanel({ geometry, row, rows, selectedName, setSelectedName }) {
         {rows.map((item) => <option value={item.name} key={item.name}>{item.name}</option>)}
       </select>
       <div className="sample-images">
-        <SampleImage title="前相机照片" src={images.front} />
-        <SampleImage title="后相机照片" src={images.rear} />
+        <SampleImage
+          title="前相机照片"
+          src={images.front}
+          spot={measurement?.spots?.front}
+          resolution={frontResolution}
+        />
+        <SampleImage
+          title="后相机照片"
+          src={images.rear}
+          spot={measurement?.spots?.rear}
+          resolution={rearResolution}
+        />
       </div>
       <div className="process-list">
         {steps.map((step) => (
@@ -276,11 +304,59 @@ function SamplePanel({ geometry, row, rows, selectedName, setSelectedName }) {
   );
 }
 
-function SampleImage({ src, title }) {
+function SampleImage({ src, title, spot, resolution }) {
+  const u = Number(spot?.u);
+  const v = Number(spot?.v);
+  const width = Number(resolution?.[0]);
+  const height = Number(resolution?.[1]);
+  const hasOverlay = [u, v, width, height].every(Number.isFinite) && width > 0 && height > 0;
+  const inside = hasOverlay && u >= 0 && v >= 0 && u <= width && v <= height;
+  const crossArm = Math.max(width, height) * 0.025;
   return (
     <figure className="sample-image">
       <div className="image-frame">
-        {src ? <img src={src} alt={title} /> : <span>未找到图片路径</span>}
+        {src ? (
+          <div className="image-stage">
+            <img src={src} alt={title} />
+            {hasOverlay && (
+              <svg
+                className="image-overlay"
+                viewBox={`0 0 ${width} ${height}`}
+                preserveAspectRatio="xMidYMid meet"
+              >
+                {inside && (
+                  <g>
+                    <line
+                      x1={u - crossArm}
+                      y1={v}
+                      x2={u + crossArm}
+                      y2={v}
+                      className="image-cross"
+                    />
+                    <line
+                      x1={u}
+                      y1={v - crossArm}
+                      x2={u}
+                      y2={v + crossArm}
+                      className="image-cross"
+                    />
+                    <circle cx={u} cy={v} r={crossArm * 0.3} className="image-dot" />
+                  </g>
+                )}
+                <text
+                  x={inside ? Math.min(u + crossArm * 1.4, width - crossArm * 0.5) : crossArm}
+                  y={inside ? Math.max(v - crossArm * 0.6, crossArm * 1.6) : crossArm * 1.6}
+                  className="image-label"
+                  style={{ fontSize: crossArm * 1.05 }}
+                >
+                  uv=({u.toFixed(1)}, {v.toFixed(1)})
+                </text>
+              </svg>
+            )}
+          </div>
+        ) : (
+          <span>未找到图片路径</span>
+        )}
       </div>
       <figcaption>{title}</figcaption>
     </figure>
@@ -349,96 +425,64 @@ function format(value) {
   return Number.isFinite(number) ? number.toFixed(2) : "";
 }
 
-function calculationSteps(row, geometry) {
+function calculationSteps(row, measurement) {
   if (!row) return [{ title: "等待样本", lines: ["上传 CSV 后选择一个样本"] }];
-  const frontRealCam = pointFromRow(row, "front_real", "cf");
-  const rearRealCam = pointFromRow(row, "rear_real", "cr");
-  const frontReal = pointFromRow(row, "front_real", "device");
-  const rearReal = pointFromRow(row, "rear_real", "device");
-  const frontVirtual = pointFromRow(row, "front_virtual", "device") || pointFromRow(row, "front_virtual", "cf");
-  const rearVirtual = pointFromRow(row, "rear_virtual", "device") || pointFromRow(row, "rear_virtual", "cf");
-  const target = pointFromRow(row, "target", "device") || probeTargetInDevice(geometry);
-  const distance = Number.isFinite(Number(row.distance_mm))
-    ? Number(row.distance_mm)
-    : distanceToLine(target, frontVirtual, rearVirtual);
+  if (!measurement) {
+    return [{ title: "等待配置", lines: ["请同时加载 config.toml 才能计算后续步骤"] }];
+  }
   return [
     {
       title: "1. 提取圆心坐标",
       lines: [
-        `前相机圆心：uv=(${format(row.front_u)}, ${format(row.front_v)})`,
-        `后相机圆心：uv=(${format(row.rear_u)}, ${format(row.rear_v)})`,
+        `前相机圆心：uv=(${format(measurement.spots.front.u)}, ${format(measurement.spots.front.v)})`,
+        `后相机圆心：uv=(${format(measurement.spots.rear.u)}, ${format(measurement.spots.rear.v)})`,
       ],
     },
     {
       title: "2. 反投影到 PnP 实像面",
       lines: [
-        `前实像点：${formatPoint(frontRealCam)}，前相机系 C1`,
-        `后实像点：${formatPoint(rearRealCam)}，后相机系 C2`,
+        `前实像点：${formatPoint(measurement.frontRealCamera)}，前相机系 C1`,
+        `后实像点：${formatPoint(measurement.rearRealCamera)}，后相机系 C2`,
       ],
     },
     {
       title: "3. 实像点入设备系",
       lines: [
-        `前实像点：${formatPoint(frontReal)}，设备系`,
-        `后实像点：${formatPoint(rearReal)}，设备系`,
+        `前实像点:${formatPoint(measurement.frontReal)}，设备系`,
+        `后实像点:${formatPoint(measurement.rearReal)}，设备系`,
       ],
     },
     {
       title: "4. 设备系内镜像反射",
       lines: [
-        `前虚像点：${formatPoint(frontVirtual)}，设备系`,
-        `后虚像点：${formatPoint(rearVirtual)}，设备系`,
+        `前虚像点:${formatPoint(measurement.frontVirtual)}，设备系`,
+        `后虚像点:${formatPoint(measurement.rearVirtual)}，设备系`,
       ],
     },
     {
       title: "5. 求解结果",
       lines: [
-        `靶点：${formatPoint(target)}，设备系`,
-        `靶点到激光线距离：${format(distance)} mm`,
+        `靶点：${formatPoint(measurement.target)}，设备系`,
+        `靶点到激光线距离：${format(measurement.distance)} mm`,
       ],
     },
   ];
 }
 
+const REPO_ROOT = "/Users/guyongfeng/Desktop/dcpam";
+
 function imagePaths(row) {
   if (!row) return { front: "", rear: "" };
-  const match = row.name.match(/^L109D(\d+)-V(\d+)-(\d+)$/i);
-  if (!match) return { front: row.front_path || "", rear: row.rear_path || "" };
-  const folder = `L109D${match[1]}${match[2] === "1" ? "" : "-v2"}`;
-  const index = Number(match[3]);
-  const base = "/@fs/Users/guyongfeng/Desktop/dcpam/reference/archive/dataset";
   return {
-    front: row.front_path || `${base}/${folder}/front/${index}.bmp`,
-    rear: row.rear_path || `${base}/${folder}/rear/${index}.bmp`,
+    front: resolveImageUrl(row.front_path),
+    rear: resolveImageUrl(row.rear_path),
   };
 }
 
-function probeTargetInDevice(geometry) {
-  const target = geometry?.device?.probeRod?.target;
-  if (!target) return null;
-  return { x: target.x, y: target.y, z: target.z, space: "device" };
-}
-
-function distanceToLine(point, first, second) {
-  if (!point || !first || !second) return NaN;
-  const line = subtract(second, first);
-  const offset = subtract(point, first);
-  const cross = {
-    x: line.y * offset.z - line.z * offset.y,
-    y: line.z * offset.x - line.x * offset.z,
-    z: line.x * offset.y - line.y * offset.x,
-  };
-  const lineLength = Math.hypot(line.x, line.y, line.z);
-  return lineLength > 1e-9 ? Math.hypot(cross.x, cross.y, cross.z) / lineLength : NaN;
-}
-
-function subtract(first, second) {
-  return { x: first.x - second.x, y: first.y - second.y, z: first.z - second.z };
-}
-
-function toPointObject(point) {
-  if (Array.isArray(point)) return { x: point[0], y: point[1], z: point[2] };
-  return point;
+function resolveImageUrl(value) {
+  if (!value) return "";
+  if (/^(?:https?:|data:|blob:|\/)/.test(value)) return value;
+  return `/@fs/${REPO_ROOT}/${value.replace(/^\.\//, "")}`;
 }
 
 function formatPoint(point) {

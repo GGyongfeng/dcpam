@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { TrackballControls } from "three/examples/jsm/controls/TrackballControls.js";
 
-import { COLORS, planeColor, pointFromRow, toVector3 } from "./geometry.js";
+import { COLORS, planeColor, toVector3 } from "./geometry.js";
 
 const DEVICE_DARK_COLOR = 0x4f5661;
 const VIEW_FRAME_COLOR = 0x1f5a78;
@@ -18,7 +18,7 @@ const DEVICE_LAYER_KEYS = [
   "probeRod",
 ];
 
-export function SceneView({ rows, geometry, layers }) {
+export function SceneView({ rows, measurement, geometry, layers }) {
   const mountRef = useRef(null);
   const axesRef = useRef(null);
   const layersRef = useRef(layers);
@@ -124,9 +124,9 @@ export function SceneView({ rows, geometry, layers }) {
     const context = sceneRef.current;
     if (!context) return;
     clearGroup(context.root);
-    buildScene(context.root, rows, geometry, layers);
+    buildScene(context.root, rows, measurement, geometry, layers);
     context.geometry = geometry;
-  }, [rows, geometry, layers]);
+  }, [rows, measurement, geometry, layers]);
 
   useEffect(() => {
     const context = sceneRef.current;
@@ -161,7 +161,7 @@ export function SceneView({ rows, geometry, layers }) {
   );
 }
 
-function buildScene(root, rows, geometry, layers) {
+function buildScene(root, rows, measurement, geometry, layers) {
   const deviceVisible = hasVisibleDeviceLayer(layers);
   if (geometry) {
     geometry.planes.forEach((plane) => {
@@ -195,28 +195,29 @@ function buildScene(root, rows, geometry, layers) {
     }
   }
 
-  rows.forEach((row) => {
-    const frontVirtual = displayPointFromRow(row, "front_virtual", "cf", geometry);
-    const rearVirtual = displayPointFromRow(row, "rear_virtual", "cr", geometry);
+  if (measurement) {
+    const sampleName = rows[0]?.name || "";
+    const frontVirtual = displayPointFromMeasurement(measurement.frontVirtual, geometry);
+    const rearVirtual = displayPointFromMeasurement(measurement.rearVirtual, geometry);
     if (layers.frontVirtual && frontVirtual) {
-      addPoint(root, frontVirtual, COLORS.frontVirtual, 0.72, pointInfo("前虚像点", "虚像点", frontVirtual, row.name, "C1 显示坐标系：由设备坐标系经前取景框 PnP 对齐得到"));
+      addPoint(root, frontVirtual, COLORS.frontVirtual, 0.72, pointInfo("前虚像点", "虚像点", frontVirtual, sampleName, "C1 显示坐标系：由设备坐标系经前取景框 PnP 对齐得到"));
     }
     if (layers.rearVirtual && rearVirtual) {
-      addPoint(root, rearVirtual, COLORS.rearVirtual, 0.72, pointInfo("后虚像点", "虚像点", rearVirtual, row.name, "C1 显示坐标系：由设备坐标系经前取景框 PnP 对齐得到"));
+      addPoint(root, rearVirtual, COLORS.rearVirtual, 0.72, pointInfo("后虚像点", "虚像点", rearVirtual, sampleName, "C1 显示坐标系:由设备坐标系经前取景框 PnP 对齐得到"));
     }
     if (layers.realPoints) {
-      const frontReal = displayPointFromRow(row, "front_real", "cf", geometry);
-      const rearReal = displayPointFromRow(row, "rear_real", "cr", geometry);
+      const frontReal = displayPointFromMeasurement(measurement.frontReal, geometry);
+      const rearReal = displayPointFromMeasurement(measurement.rearReal, geometry);
       if (frontReal) {
-        addPoint(root, frontReal, COLORS.real, 0.42, pointInfo("前实像点", "实像点", frontReal, row.name, "C1 显示坐标系"));
+        addPoint(root, frontReal, COLORS.real, 0.42, pointInfo("前实像点", "实像点", frontReal, sampleName, "C1 显示坐标系"));
       }
       if (rearReal) {
-        addPoint(root, rearReal, 0x8a96a8, 0.42, pointInfo("后实像点", "实像点", rearReal, row.name, "C1 显示坐标系"));
+        addPoint(root, rearReal, 0x8a96a8, 0.42, pointInfo("后实像点", "实像点", rearReal, sampleName, "C1 显示坐标系"));
       }
     }
     if (layers.laserLines && frontVirtual && rearVirtual) {
       root.add(laserLineMesh(frontVirtual, rearVirtual, {
-        name: row.name,
+        name: sampleName,
         type: "激光线",
         coordinateSystem: "C1 显示坐标系",
         position: midpoint(frontVirtual, rearVirtual),
@@ -227,7 +228,7 @@ function buildScene(root, rows, geometry, layers) {
         ],
       }));
     }
-  });
+  }
 }
 
 function hasVisibleDeviceLayer(layers) {
@@ -238,24 +239,12 @@ function addPoint(root, point, color, radius, info) {
   root.add(pointMesh(point, color, radius, info));
 }
 
-function rearDisplayPointFromRow(row, prefix, geometry) {
-  const point = pointFromRow(row, prefix, "cr");
-  const transform = geometry?.rearCameraDisplayTransform?.transformPoint;
-  return point && transform ? toPointFromArray(transform([point.x, point.y, point.z])) : null;
-}
-
-function displayPointFromRow(row, prefix, cameraSuffix, geometry) {
-  const point = pointFromRow(row, prefix, cameraSuffix);
+function displayPointFromMeasurement(point, geometry) {
   if (!point) return null;
-  if (point.space === "device") {
-    const transform = geometry?.deviceAlignment?.transformPoint;
-    return transform ? toPointFromArray(transform([point.x, point.y, point.z])) : { x: point.x, y: point.y, z: point.z };
-  }
-  if (point.space === "camera_rear") {
-    const transform = geometry?.rearCameraDisplayTransform?.transformPoint;
-    return transform ? toPointFromArray(transform([point.x, point.y, point.z])) : { x: point.x, y: point.y, z: point.z };
-  }
-  return { x: point.x, y: point.y, z: point.z };
+  // measureRow 输出的实/虚像点全部位于设备坐标系；经 deviceAlignment 进入 C1 显示坐标系。
+  const transform = geometry?.deviceAlignment?.transformPoint;
+  if (!transform) return { x: point.x, y: point.y, z: point.z };
+  return toPointFromArray(transform([point.x, point.y, point.z]));
 }
 
 function pointInfo(name, type, position, sampleName, coordinateSystem) {
@@ -755,20 +744,36 @@ function probeRodMesh(spec, basePlate) {
 }
 
 function probeRodConnector(spec, basePlate, material) {
-  const baseY = basePlate.yMax;
-  const radius = spec.connectorRadius;
-  const shape = new THREE.Shape();
-  shape.moveTo(radius, 0);
-  shape.absarc(0, 0, radius, 0, Math.PI, false);
-  shape.lineTo(radius, 0);
-  const geometry = new THREE.ExtrudeGeometry(shape, {
-    depth: spec.connectorLength,
-    bevelEnabled: false,
-    curveSegments: 32,
-  });
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.position.set(spec.root.x, baseY, spec.root.z);
-  return mesh;
+  // 示意性 T 形连接件：横杆沿 X 方向贴底座 -Y 面，竖杆沿 -Y 穿过探杆位置再略微伸出。
+  // T 形截面在 X-Y 平面内绘制，沿 Z 方向从杆根 (spec.root.z) 向 +Z 拉伸 connectorDepth。
+  const baseY = basePlate.yMin;
+  const depthZ = spec.connectorDepth;
+  const zCenter = spec.root.z + depthZ / 2;
+  const crossBarX = spec.connectorCrossBarWidth;
+  const crossBarY = spec.connectorCrossBarHeight;
+  const stemX = spec.connectorStemWidth;
+  const stemExtension = spec.connectorStemExtension;
+  const stemTopY = baseY - crossBarY;
+  const stemBottomY = -stemExtension;
+  const stemY = stemTopY - stemBottomY;
+
+  const group = new THREE.Group();
+  const crossBar = new THREE.Mesh(
+    new THREE.BoxGeometry(crossBarX, crossBarY, depthZ),
+    material,
+  );
+  crossBar.position.set(spec.root.x, baseY - crossBarY / 2, zCenter);
+  group.add(crossBar);
+
+  if (stemY > 0) {
+    const stem = new THREE.Mesh(
+      new THREE.BoxGeometry(stemX, stemY, depthZ),
+      material,
+    );
+    stem.position.set(spec.root.x, (stemTopY + stemBottomY) / 2, zCenter);
+    group.add(stem);
+  }
+  return group;
 }
 
 function probeRodLength(spec) {

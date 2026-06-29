@@ -24,5 +24,10 @@ thickness_direction = [0.0, 0.0, 1.0]
 direction = [0.0, 0.0, -1.0]
 rod_radius_mm = 0.9
 tip_height_mm = 5.0
-connector_radius_mm = 13.0
-connector_length_mm = 8.0
+# 探杆 T 形连接件：T 截面绘制在 X-Y 平面内，沿 Z 从杆根向 +Z 拉伸 connector_depth_mm。
+# 横杆贴底座 -Y 面，竖杆穿过杆位再向 -Y 多伸出 connector_stem_extension_mm。
+connector_depth_mm = 40.0
+connector_cross_bar_width_mm = 10.0
+connector_cross_bar_height_mm = 3.0
+connector_stem_width_mm = 4.0
+connector_stem_extension_mm = 5.0
