@@ -61,7 +61,7 @@ class DatasetCenterExtractor:
 
     def _iter_pairs(self) -> list[ImagePairPaths]:
         pairs: list[ImagePairPaths] = []
-        for group_dir in sorted(self.dataset_dir.iterdir(), key=_path_sort_key):
+        for group_dir in sorted(self.dataset_dir.iterdir(), key=lambda p: p.name):
             if not group_dir.is_dir():
                 continue
             group = _parse_group(group_dir.name)
@@ -73,10 +73,12 @@ class DatasetCenterExtractor:
                 continue
 
             for front_path in sorted(front_dir.glob("*.bmp"), key=_path_sort_key):
-                pair_index = int(front_path.stem)
-                rear_path = rear_dir / front_path.name
-                if not rear_path.exists():
-                    raise FileNotFoundError(f"缺少后相机图片: {rear_path}")
+                pair_index = _extract_pair_index(front_path.stem)
+                if pair_index is None:
+                    continue
+                rear_path = _match_rear_path(rear_dir, pair_index)
+                if rear_path is None:
+                    raise FileNotFoundError(f"缺少后相机图片: {rear_dir} #{pair_index}")
                 pairs.append(
                     ImagePairPaths(
                         name=_sample_name(group, pair_index),
@@ -139,9 +141,39 @@ def _sample_name(group: DatasetGroup, pair_index: int) -> str:
 
 
 def _path_sort_key(path: Path) -> tuple[str, int]:
-    if path.stem.isdigit():
-        return path.parent.name, int(path.stem)
+    index = _extract_pair_index(path.stem)
+    if index is not None:
+        return path.parent.name, index
     return path.name, -1
+
+
+def _extract_pair_index(stem: str) -> int | None:
+    """从 stem 里抓出"对编号"：
+
+    - 纯数字 "1" / "12"               -> 1 / 12
+    - "<数字>_F (12)" / "<数字>_R (12)" -> 12（采集软件常见命名）
+    - 否则匹配第一个独立的数字串
+    """
+    if stem.isdigit():
+        return int(stem)
+    match = re.search(r"\((\d+)\)", stem)
+    if match is not None:
+        return int(match.group(1))
+    match = re.search(r"(\d+)", stem)
+    if match is not None:
+        return int(match.group(1))
+    return None
+
+
+def _match_rear_path(rear_dir: Path, pair_index: int) -> Path | None:
+    """在 rear_dir 里找一张 pair_index 编号的 .bmp，命名不需要与 front 完全一致。"""
+    direct = rear_dir / f"{pair_index}.bmp"
+    if direct.exists():
+        return direct
+    for candidate in rear_dir.glob("*.bmp"):
+        if _extract_pair_index(candidate.stem) == pair_index:
+            return candidate
+    return None
 
 
 def _resolve_subdir(parent: Path, aliases: tuple[str, ...]) -> Path | None:
