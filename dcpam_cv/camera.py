@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -132,6 +133,9 @@ class _DualCameraAravis:
         self.config = config
         self._front: _AravisHandle | None = None
         self._rear: _AravisHandle | None = None
+        # 前后相机 grab 并行执行的线程池。每台相机各自有独立的 Aravis stream，
+        # 互不共享状态，所以并发调用 _grab_frame 是安全的。
+        self._executor: ThreadPoolExecutor | None = None
 
     def open(self) -> None:
         arv = _get_aravis()
@@ -143,6 +147,7 @@ class _DualCameraAravis:
         serials = {arv.get_device_serial_nbr(i): i for i in range(n)}
         self._front = self._open_one(serials, self.config.front, "front")
         self._rear = self._open_one(serials, self.config.rear, "rear")
+        self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="dcpam-cap")
 
     def close(self) -> None:
         for handle in (self._front, self._rear):
@@ -154,16 +159,28 @@ class _DualCameraAravis:
                 pass
         self._front = None
         self._rear = None
+        if self._executor is not None:
+            self._executor.shutdown(wait=True)
+            self._executor = None
 
     def capture(self) -> ImagePair:
-        if self._front is None or self._rear is None:
+        """瞬时采集一对图像。前后相机的 _grab_frame 并行执行，把等新帧的时间从 2×fps^-1 降到 1×fps^-1。"""
+        if self._front is None or self._rear is None or self._executor is None:
             raise RuntimeError("相机未打开，请先调用 open()")
 
         timestamp = datetime.now()
         uid = f"C_{timestamp.strftime('%Y%m%d_%H%M%S')}"
+
+        front_future = self._executor.submit(self._grab_frame, self._front)
+        rear_future = self._executor.submit(self._grab_frame, self._rear)
+
+        # 任一相机异常都会通过 .result() 抛出。
+        front = front_future.result()
+        rear = rear_future.result()
+
         return ImagePair(
-            front=self._grab_frame(self._front),
-            rear=self._grab_frame(self._rear),
+            front=front,
+            rear=rear,
             timestamp=timestamp,
             uid=uid,
         )

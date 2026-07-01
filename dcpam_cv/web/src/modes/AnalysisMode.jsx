@@ -1,18 +1,11 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 import { SceneView } from "../SceneView.jsx";
 import { DEFAULT_LAYERS, LayersDrawer } from "../components/LayersDrawer.jsx";
 import { ProcessPanel } from "../components/ProcessPanel.jsx";
 import { AppShell } from "../layout/AppShell.jsx";
 import { buildGeometry } from "../geometry.js";
-import { measureRow } from "../pipeline.js";
-import { normalizeMeasurementRow, parseCsv } from "../parsers.js";
-import { useStoredText } from "../storage.js";
-
-const STORAGE_KEYS = {
-  csv: "dcpam.viewer.csvText",
-  csvName: "dcpam.viewer.csvName",
-};
+import { measureRow, aggregateDistance } from "../pipeline.js";
 
 const DEFAULT_ALGORITHM = {
   imageAlignment: "pnp",
@@ -22,70 +15,94 @@ const DEFAULT_ALGORITHM = {
 const REPO_ROOT = "/Users/guyongfeng/Desktop/dcpam";
 
 export function AnalysisMode({ mode, setMode, mainPanel, setMainPanel, tomlConfig }) {
-  const [csvText, setCsvText] = useStoredText(STORAGE_KEYS.csv);
-  const [csvName, setCsvName] = useStoredText(STORAGE_KEYS.csvName);
-  const [selectedName, setSelectedName] = useState("");
-  const [layers, setLayers] = useState(DEFAULT_LAYERS);
+  const [records, setRecords] = useState([]);
+  const [selectedId, setSelectedId] = useState("");
   const [filter, setFilter] = useState("");
+  const [layers, setLayers] = useState(DEFAULT_LAYERS);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const rows = useMemo(
-    () => parseCsv(csvText).map(normalizeMeasurementRow).filter((row) => row.name),
-    [csvText],
+  const refreshRecords = useCallback(async () => {
+    setLoading(true);
+    try {
+      const response = await fetch("/api/measurements");
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      setRecords(Array.isArray(data) ? data : []);
+      setError("");
+    } catch (err) {
+      setError(err.message || String(err));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshRecords();
+  }, [refreshRecords]);
+
+  const orderedRecords = useMemo(
+    () => [...records].sort((a, b) => (b.ts || "").localeCompare(a.ts || "")),
+    [records],
   );
+  const filteredRecords = useMemo(() => {
+    const needle = filter.trim().toLowerCase();
+    if (!needle) return orderedRecords;
+    return orderedRecords.filter((record) =>
+      (record.id || "").toLowerCase().includes(needle)
+      || (record.name || "").toLowerCase().includes(needle),
+    );
+  }, [orderedRecords, filter]);
+
+  useEffect(() => {
+    if (!filteredRecords.length) {
+      setSelectedId("");
+      return;
+    }
+    if (!filteredRecords.some((record) => record.id === selectedId)) {
+      setSelectedId(filteredRecords[0].id);
+    }
+  }, [filteredRecords, selectedId]);
+
+  const selectedRecord = useMemo(
+    () => filteredRecords.find((r) => r.id === selectedId) || filteredRecords[0] || null,
+    [filteredRecords, selectedId],
+  );
+
   const geometryState = useMemo(() => {
     if (!tomlConfig) return { error: "", geometry: null };
     try {
       return { error: "", geometry: buildGeometry(tomlConfig, DEFAULT_ALGORITHM) };
-    } catch (error) {
-      return { error: error instanceof Error ? error.message : String(error), geometry: null };
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err), geometry: null };
     }
   }, [tomlConfig]);
   const geometry = geometryState.geometry;
-  const selectedRow = useMemo(
-    () => rows.find((row) => row.name === selectedName) || rows[0] || null,
-    [rows, selectedName],
+
+  const measurementRow = useMemo(() => recordToMeasurementRow(selectedRecord), [selectedRecord]);
+  const aggregate = useMemo(
+    () => aggregateDistance(selectedRecord, geometry, tomlConfig),
+    [selectedRecord, geometry, tomlConfig],
   );
-  const measurement = useMemo(
-    () => measureRow(selectedRow, geometry, tomlConfig),
-    [selectedRow, geometry, tomlConfig],
-  );
-
-  useEffect(() => {
-    if (!rows.length) setSelectedName("");
-    else if (!rows.some((row) => row.name === selectedName)) setSelectedName(rows[0].name);
-  }, [rows, selectedName]);
-
-  const onCsv = async (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    setCsvText(await file.text());
-    setCsvName(file.name);
-    event.target.value = "";
-  };
-  const clearCsv = () => {
-    setCsvText("");
-    setCsvName("");
-    setSelectedName("");
-  };
-
-  const filteredRows = filter
-    ? rows.filter((row) => row.name.toLowerCase().includes(filter.toLowerCase()))
-    : rows;
+  const measurement = useMemo(() => {
+    if (aggregate?.representative) return aggregate.representative;
+    return measureRow(measurementRow, geometry, tomlConfig);
+  }, [aggregate, measurementRow, geometry, tomlConfig]);
 
   const calibration = tomlConfig?.calibration || tomlConfig;
   const resolution = {
     front: calibration?.front_camera?.resolution,
     rear: calibration?.rear_camera?.resolution,
   };
-  const images = selectedRow
+  const images = selectedRecord
     ? {
-        frontSrc: resolveImageUrl(selectedRow.front_path),
-        rearSrc: resolveImageUrl(selectedRow.rear_path),
+        frontSrc: lastFrameUrl(selectedRecord, "front"),
+        rearSrc: lastFrameUrl(selectedRecord, "rear"),
         frontSpot: measurement?.spots?.front,
         rearSpot: measurement?.spots?.rear,
       }
     : null;
-  const steps = calculationSteps(selectedRow, measurement);
+  const steps = analysisSteps(selectedRecord, measurement, aggregate);
 
   return (
     <AppShell
@@ -96,33 +113,35 @@ export function AnalysisMode({ mode, setMode, mainPanel, setMainPanel, tomlConfi
       brandTitle="DCPAM 分析"
       leftSidebar={
         <LeftSidebar
-          csvName={csvName}
-          onCsv={onCsv}
-          clearCsv={clearCsv}
-          rows={filteredRows}
-          totalRows={rows.length}
-          selectedName={selectedRow?.name || ""}
-          setSelectedName={setSelectedName}
+          records={filteredRecords}
+          totalRecords={orderedRecords.length}
+          selectedId={selectedRecord?.id || ""}
+          setSelectedId={setSelectedId}
           filter={filter}
           setFilter={setFilter}
+          onRefresh={refreshRecords}
+          loading={loading}
+          error={error}
         />
       }
       sceneSlot={
         <div className="scene-host">
           <SceneView
-            rows={selectedRow ? [selectedRow] : []}
+            rows={measurementRow ? [measurementRow] : []}
             measurement={measurement}
             geometry={geometry}
             layers={layers}
           />
           <LayersDrawer layers={layers} setLayers={setLayers} />
           {geometryState.error && <div className="viewer-error">配置解析失败：{geometryState.error}</div>}
-          {!rows.length && !geometry && <div className="empty">上传 CSV 和 config.toml 后显示 3D 场景</div>}
+          {!orderedRecords.length && !geometry && (
+            <div className="empty">尚无采样记录，切到"拍照测量"采集，或加载 config.toml</div>
+          )}
         </div>
       }
       processSlot={
         <ProcessPanel
-          title={selectedRow?.name}
+          title={selectedRecord?.id}
           images={images}
           resolution={resolution}
           steps={steps}
@@ -132,41 +151,50 @@ export function AnalysisMode({ mode, setMode, mainPanel, setMainPanel, tomlConfi
   );
 }
 
-function LeftSidebar({ csvName, onCsv, clearCsv, rows, totalRows, selectedName, setSelectedName, filter, setFilter }) {
+function LeftSidebar({
+  records, totalRecords, selectedId, setSelectedId,
+  filter, setFilter, onRefresh, loading, error,
+}) {
   return (
     <div className="left-stack">
       <section className="section sample-list-section">
         <div className="section-title-row">
-          <h3>样本 ({rows.length}{rows.length !== totalRows ? `/${totalRows}` : ""})</h3>
-          <div className="csv-actions">
-            <label className="csv-upload" title={csvName || "上传 CSV"}>
-              {csvName ? "替换 CSV" : "上传 CSV"}
-              <input type="file" accept=".csv,text/csv" onChange={onCsv} />
-            </label>
-            {csvName && (
-              <button type="button" className="link-button" onClick={clearCsv}>× 清空</button>
-            )}
+          <h3>采样历史 ({records.length}{records.length !== totalRecords ? `/${totalRecords}` : ""})</h3>
+          <div className="sample-list-actions">
+            <button
+              type="button"
+              className="link-button"
+              onClick={onRefresh}
+              disabled={loading}
+              title="重新读取本地 data/measurements 目录"
+            >
+              {loading ? "刷新中..." : "刷新"}
+            </button>
           </div>
         </div>
         <input
           className="sample-filter"
           type="search"
-          placeholder="搜索样本名"
+          placeholder="按 id 或名称过滤"
           value={filter}
           onChange={(event) => setFilter(event.target.value)}
         />
+        {error && <div className="capture-status status-error">{error}</div>}
         <div className="sample-list">
-          {rows.length === 0 ? (
-            <div className="sample-empty">{totalRows === 0 ? "尚未上传 CSV" : "无匹配样本"}</div>
+          {records.length === 0 ? (
+            <div className="sample-empty">
+              {totalRecords === 0 ? "尚无采样记录，切到\"拍照测量\"开始采集" : "无匹配采样"}
+            </div>
           ) : (
-            rows.map((row) => (
+            records.map((record) => (
               <button
                 type="button"
-                key={row.name}
-                className={`sample-item ${row.name === selectedName ? "active" : ""}`}
-                onClick={() => setSelectedName(row.name)}
+                key={record.id}
+                className={`sample-item ${record.id === selectedId ? "active" : ""}`}
+                onClick={() => setSelectedId(record.id)}
               >
-                {row.name}
+                <span>{record.id}</span>
+                <span className="sample-item-meta">n={record.valid_n ?? record.n}</span>
               </button>
             ))
           )}
@@ -174,6 +202,31 @@ function LeftSidebar({ csvName, onCsv, clearCsv, rows, totalRows, selectedName, 
       </section>
     </div>
   );
+}
+
+function recordToMeasurementRow(record) {
+  if (!record) return null;
+  const front = record.front_uv_mean;
+  const rear = record.rear_uv_mean;
+  const lastFront = record.frames?.[record.frames.length - 1]?.front_path || "";
+  const lastRear = record.frames?.[record.frames.length - 1]?.rear_path || "";
+  if (!Array.isArray(front) || !Array.isArray(rear)) return null;
+  return {
+    name: record.id,
+    front_u: front[0],
+    front_v: front[1],
+    rear_u: rear[0],
+    rear_v: rear[1],
+    front_path: lastFront,
+    rear_path: lastRear,
+  };
+}
+
+function lastFrameUrl(record, side) {
+  const path = record?.frames?.[record.frames.length - 1]?.[`${side}_path`];
+  if (!path) return "";
+  if (path.startsWith("/")) return `/@fs${path}`;
+  return `/@fs/${REPO_ROOT}/${path.replace(/^\.\//, "")}`;
 }
 
 function format(value) {
@@ -186,19 +239,30 @@ function formatPoint(point) {
   return `(${format(point.x)}, ${format(point.y)}, ${format(point.z)})`;
 }
 
-function calculationSteps(row, measurement) {
-  if (!row) return [{ title: "等待样本", lines: ["上传 CSV 后选择一个样本"] }];
-  if (!measurement) {
-    return [{ title: "等待配置", lines: ["请同时加载 config.toml 才能计算后续步骤"] }];
+function analysisSteps(record, measurement, aggregate) {
+  if (!record) {
+    return [{ title: "等待采样", lines: ["请在左侧选择一条采样记录"] }];
   }
-  return [
+  const frontMean = record.front_uv_mean || [];
+  const rearMean = record.rear_uv_mean || [];
+  const frontStd = record.front_uv_std || [];
+  const rearStd = record.rear_uv_std || [];
+  const nTotal = aggregate?.nTotal ?? (record.valid_n ?? record.n);
+  const nUsed = aggregate?.nUsed ?? nTotal;
+  const stats = [
     {
-      title: "1. 提取圆心坐标",
+      title: `1. 圆心提取（n=${nTotal}${aggregate ? `，有效 ${nUsed}` : ""}）`,
       lines: [
-        `前相机圆心：uv=(${format(measurement.spots.front.u)}, ${format(measurement.spots.front.v)})`,
-        `后相机圆心：uv=(${format(measurement.spots.rear.u)}, ${format(measurement.spots.rear.v)})`,
+        `前相机均值 uv=(${format(frontMean[0])}, ${format(frontMean[1])})  std=(${format(frontStd[0])}, ${format(frontStd[1])})`,
+        `后相机均值 uv=(${format(rearMean[0])}, ${format(rearMean[1])})  std=(${format(rearStd[0])}, ${format(rearStd[1])})`,
       ],
     },
+  ];
+  if (!measurement) {
+    stats.push({ title: "等待配置", lines: ["上传 config.toml 才能计算 3D 量"] });
+    return stats;
+  }
+  return stats.concat([
     {
       title: "2. 反投影到 PnP 实像面",
       lines: [
@@ -222,16 +286,34 @@ function calculationSteps(row, measurement) {
     },
     {
       title: "5. 求解结果",
-      lines: [
-        `靶点：${formatPoint(measurement.target)}，设备系`,
-        `靶点到激光线距离：${format(measurement.distance)} mm`,
-      ],
+      lines: buildResultLines(measurement, aggregate),
     },
-  ];
+  ]);
 }
 
-function resolveImageUrl(value) {
-  if (!value) return "";
-  if (/^(?:https?:|data:|blob:|\/)/.test(value)) return value;
-  return `/@fs/${REPO_ROOT}/${value.replace(/^\.\//, "")}`;
+function buildResultLines(measurement, aggregate) {
+  const lines = [`靶点：${formatPoint(measurement.target)}，设备系`];
+  if (aggregate && aggregate.nUsed > 0) {
+    const std = Number.isFinite(aggregate.distanceStd) ? aggregate.distanceStd : 0;
+    lines.push(
+      `靶点到激光线距离：${format(aggregate.distanceMean)} ± ${format(std)} mm` +
+      `  (n=${aggregate.nUsed}/${aggregate.nTotal})`,
+    );
+    const dropped = aggregate.nTotal - aggregate.nUsed;
+    if (dropped > 0) {
+      const bits = [];
+      if (aggregate.nDroppedByConfidence > 0) {
+        bits.push(`置信度 ${aggregate.nDroppedByConfidence}`);
+      }
+      if (aggregate.nDroppedByMAD > 0) {
+        bits.push(`距离离群 ${aggregate.nDroppedByMAD}`);
+      }
+      lines.push(`已剔除 ${dropped} 帧：${bits.join("，")}`);
+    }
+  } else if (aggregate) {
+    lines.push(`靶点到激光线距离：无有效帧 (n=0/${aggregate.nTotal})`);
+  } else {
+    lines.push(`靶点到激光线距离：${format(measurement.distance)} mm`);
+  }
+  return lines;
 }
