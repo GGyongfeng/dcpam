@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -14,6 +15,17 @@ from .startup import print_health_report
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8011
+
+
+def _force_utf8_console() -> None:
+    """Windows 默认 cmd 是 GBK，rich 输出 ✓/✗ 会崩。强制切 UTF-8。"""
+    if sys.platform != "win32":
+        return
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
 
 
 def _ensure_aravis_libs() -> None:
@@ -49,15 +61,52 @@ def _start_frontend() -> subprocess.Popen:
         raise RuntimeError(
             f"前端依赖未安装：请先 cd {web_dir} && npm install"
         )
+
+    npm = shutil.which("npm") or shutil.which("npm.cmd")
+    if npm is None:
+        raise RuntimeError("找不到 npm，请安装 Node.js")
+
+    if sys.platform == "win32":
+        # 独立进程组，方便 CTRL_BREAK 关掉 vite + esbuild 子孙
+        return subprocess.Popen(
+            [npm, "run", "dev"],
+            cwd=web_dir,
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+        )
     return subprocess.Popen(
-        ["npm", "run", "dev"],
+        [npm, "run", "dev"],
         cwd=web_dir,
         start_new_session=True,
     )
 
 
 def _terminate_process_group(proc: subprocess.Popen, timeout: float = 8.0) -> None:
-    """向整个进程组发 SIGINT→SIGTERM→SIGKILL，防止 vite/esbuild 孤儿化。"""
+    """向整个进程组发信号，防止 vite/esbuild 孤儿化。"""
+    if sys.platform == "win32":
+        try:
+            proc.send_signal(signal.CTRL_BREAK_EVENT)
+        except (OSError, ValueError):
+            pass
+        try:
+            proc.wait(timeout=timeout)
+            return
+        except subprocess.TimeoutExpired:
+            pass
+        try:
+            proc.terminate()
+        except OSError:
+            return
+        try:
+            proc.wait(timeout=timeout)
+            return
+        except subprocess.TimeoutExpired:
+            pass
+        try:
+            proc.kill()
+        except OSError:
+            pass
+        return
+
     try:
         pgid = os.getpgid(proc.pid)
     except ProcessLookupError:
@@ -166,6 +215,8 @@ def _startup_configure_net() -> None:
 
 def main() -> None:
     """dcpam 入口：`dcpam` 启动前后端；`dcpam net` 配置相机网卡。"""
+    _force_utf8_console()
+
     if len(sys.argv) > 1 and sys.argv[1] == "net":
         sys.exit(_run_net_command())
 
@@ -201,7 +252,8 @@ def main() -> None:
         _terminate_process_group(frontend)
         sys.exit(128 + signum)
 
-    signal.signal(signal.SIGHUP, _on_terminal_signal)
+    if hasattr(signal, "SIGHUP"):
+        signal.signal(signal.SIGHUP, _on_terminal_signal)
     signal.signal(signal.SIGTERM, _on_terminal_signal)
 
     console.print("  [dim]Ctrl+C 退出[/]")

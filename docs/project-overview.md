@@ -252,8 +252,9 @@ dcpam/
 │       ├── precision_analysis.py # 核心数学模型（点线距离、误差传播、Monte Carlo、灵敏度分析）
 │       └── visualization.py     # 3D 模型、分布直方图、灵敏度图表可视化
 ├── scripts/
-│   └── run_analysis.py          # 交互式精度分析脚本（rich 终端 UI）
-├── dual_daheng_capture.py       # 大恒双相机同步采集工具
+│   ├── run_analysis.py          # 交互式精度分析脚本（rich 终端 UI）
+│   ├── check_camera_env.py      # SDK / 相机可达性自检
+│   └── capture_once.py          # 单次双相机抓帧调试脚本
 ├── papers/                      # IEEE 论文（按章节拆分的 LaTeX）
 │   ├── dcpam.tex                # 主文件
 │   ├── IEEEtran.cls
@@ -273,10 +274,10 @@ dcpam/
 - `monte_carlo_simulation()`：Monte Carlo 随机验证（默认 10000 次）
 - `sensitivity_analysis()`：单参数扰动灵敏度分析
 
-**`DualDahengController`**（`dual_daheng_capture.py`）：
-- `open_two_cameras()`：打开两个大恒相机，设置连续流模式
-- `get_current_frames()`：获取同步帧
-- `save_pair()`：保存带时间戳的图像对
+**`DualCamera`**（`dcpam_cv/camera.py`）：
+- 门面类：按 `sys.platform` 派发 Aravis 或 gxipy 后端
+- `open()` / `close()` / `capture()` / `save()`：统一接口
+- Windows 走大恒 Galaxy SDK（gxipy），其他平台走 Aravis GigE Vision
 
 ### 默认分析参数
 
