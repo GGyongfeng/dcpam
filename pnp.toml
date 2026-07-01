@@ -1,6 +1,6 @@
 # PnP 标定阶段的设备端约定。
 #
-# 用途：scripts/10_estimate_frame_poses.py 在执行 PnP 求解后，
+# 用途：scripts/pnp_定位.py 在执行 PnP 求解后，
 # 用这里的"设备端约定"把 PnP 给出的"相机⇄取景框"姿态拼成
 # "相机⇄设备"的刚体变换，写入 config.toml.calibration.{front,rear}_camera_to_device。
 #

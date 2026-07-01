@@ -19,52 +19,37 @@ export const COLORS = {
 
 export function buildGeometry(config, algorithm = {}) {
   const calibration = config.calibration || config;
-  const frontAxis = makeOpticalAxis("C1 光轴", [0, 0, 0], [0, 0, 1], COLORS.cameraFront);
   const device = makeDeviceGeometry(config.device?.geometry || {});
-  const deviceAlignment = makeDeviceAlignment(
-    algorithm.imageAlignment || "pnp",
-    calibration,
-    device,
-  );
-  const rearDisplayTransform = makeRearCameraDisplayTransform(
-    calibration,
-    device,
-    deviceAlignment,
-  );
+
   const frontCameraToDevice = makeCameraToDeviceTransform(calibration.front_camera_to_device);
   const rearCameraToDevice = makeCameraToDeviceTransform(calibration.rear_camera_to_device);
-  const rearAxis = makeOpticalAxis(
-    "C2 光轴",
-    rearDisplayTransform.transformPoint([0, 0, 0]),
-    rearDisplayTransform.transformNormal([0, 0, 1]),
-    COLORS.cameraRear,
-  );
-  const frames = makeFrames(calibration, rearDisplayTransform);
+  if (!frontCameraToDevice || !rearCameraToDevice) {
+    throw new Error(
+      "config.toml 缺少 front_camera_to_device / rear_camera_to_device，无法构建相机到设备系的变换",
+    );
+  }
+
+  // 世界坐标系 = device 坐标系。所有 device visual（取景框/底座/反射面/探杆）直接画；
+  // 相机系下的量（PnP 实像面、反投影点）经 cameraToDevice 变到 device 系再画。
+  const deviceAlignment = identityTransform("device");
+
   const cameras = [
-    {
-      name: "C1",
-      position: { x: 0, y: 0, z: 0 },
-      color: COLORS.cameraFront,
-      axes: axesFromColumns([1, 0, 0], [0, 1, 0], [0, 0, 1]),
-    },
-    {
-      name: "C2",
-      position: toPoint(rearDisplayTransform.transformPoint([0, 0, 0])),
-      color: COLORS.cameraRear,
-      axes: axesFromColumns(
-        rearDisplayTransform.transformNormal([1, 0, 0]),
-        rearDisplayTransform.transformNormal([0, 1, 0]),
-        rearDisplayTransform.transformNormal([0, 0, 1]),
-      ),
-    },
+    makeCameraEntry("C1", frontCameraToDevice, COLORS.cameraFront),
+    makeCameraEntry("C2", rearCameraToDevice, COLORS.cameraRear),
   ];
+
+  const frontAxis = makeOpticalAxis("C1 光轴", cameras[0].origin, cameras[0].zAxis, COLORS.cameraFront);
+  const rearAxis = makeOpticalAxis("C2 光轴", cameras[1].origin, cameras[1].zAxis, COLORS.cameraRear);
+
+  const frames = makeFrames(calibration, frontCameraToDevice, rearCameraToDevice);
   const planes = makeOpticalPlanePatches(
     calibration,
     device,
     deviceAlignment,
     frontAxis,
     rearAxis,
-    rearDisplayTransform,
+    frontCameraToDevice,
+    rearCameraToDevice,
   );
 
   return {
@@ -72,7 +57,7 @@ export function buildGeometry(config, algorithm = {}) {
     deviceAlignment,
     planes,
     frames,
-    rearCameraDisplayTransform: rearDisplayTransform,
+    rearCameraDisplayTransform: rearCameraToDevice,
     frontCameraToDevice,
     rearCameraToDevice,
     opticalAxes: [frontAxis, rearAxis],
@@ -128,50 +113,44 @@ function makeCameraToDeviceTransform(config) {
   const rotation = (config.rotation || []).map((row) => row.map(Number));
   if (rotation.length !== 3 || rotation.some((row) => row.length !== 3)) return null;
   const translation = (config.translation || [0, 0, 0]).map(Number);
-  return (point) => add3(matrixVectorMul(rotation, point.map(Number)), translation);
+  const transformPoint = (point) => add3(matrixVectorMul(rotation, point.map(Number)), translation);
+  const transformNormal = (normal) => unit(matrixVectorMul(rotation, normal.map(Number)));
+  const fn = (point) => transformPoint(point);
+  fn.transformPoint = transformPoint;
+  fn.transformNormal = transformNormal;
+  fn.rotation = rotation;
+  fn.translation = translation;
+  fn.matrix = [
+    [rotation[0][0], rotation[0][1], rotation[0][2], translation[0]],
+    [rotation[1][0], rotation[1][1], rotation[1][2], translation[1]],
+    [rotation[2][0], rotation[2][1], rotation[2][2], translation[2]],
+    [0, 0, 0, 1],
+  ];
+  return fn;
 }
 
-function makeDeviceAlignment(mode, calibration, device) {
-  const frontFrame = device.frames?.[0];
-  const sourcePoint = fromPoint(frontFrame?.center || { x: 0, y: 0, z: 0 });
-  const cameraToDevice = calibration.front_camera_to_device;
-  if (mode === "pnp" && cameraToDevice) {
-    // 把 device frame 中心 (sourcePoint) 对到设备坐标系下相同位置，并按 camera_to_device 设置朝向。
-    const rotation = (cameraToDevice.rotation || []).map((row) => row.map(Number));
-    const xAxis = [rotation[0][0], rotation[1][0], rotation[2][0]];
-    const yAxis = [rotation[0][1], rotation[1][1], rotation[2][1]];
-    const zAxis = [rotation[0][2], rotation[1][2], rotation[2][2]];
-    return makeTransformFromAxes("PnP", sourcePoint, sourcePoint, xAxis, yAxis, zAxis);
-  }
-  return makeTransformFromAxes("PnP", sourcePoint, sourcePoint, [1, 0, 0], [0, 1, 0], [0, 0, 1]);
-}
-
-function makeRearCameraDisplayTransform(calibration, device, alignment) {
-  const rearFrame = device.frames?.[1];
-  const surface = calibration.frame_surfaces?.rear_frame_pnp;
-  const cameraToDevice = calibration.rear_camera_to_device;
-  if (!rearFrame || !surface || !cameraToDevice) {
-    throw new Error(
-      "config.toml 缺少 rear_frame_pnp / rear_camera_to_device，或 device_visual.toml 缺少 rear_frame，无法构建后相机显示变换",
-    );
-  }
-  const targetPoint = alignment.transformPoint(fromPoint(rearFrame.center));
-  const targetAxes = {
-    x: alignment.transformNormal([1, 0, 0]),
-    y: alignment.transformNormal([0, 1, 0]),
-    z: alignment.transformNormal(fromPoint(rearFrame.normal)),
+function identityTransform(label = "device") {
+  return {
+    label,
+    matrix: [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]],
+    transformPoint: (point) => point.map(Number),
+    transformNormal: (normal) => unit(normal.map(Number)),
   };
-  const rotation = (cameraToDevice.rotation || []).map((row) => row.map(Number));
-  const xAxis = [rotation[0][0], rotation[1][0], rotation[2][0]];
-  const yAxis = [rotation[0][1], rotation[1][1], rotation[2][1]];
-  const zAxis = [rotation[0][2], rotation[1][2], rotation[2][2]];
-  return makeTransformBetweenAxes(
-    "P2 PnP-设备面对齐",
-    surface.point || [0, 0, 0],
-    [xAxis, yAxis, zAxis],
-    targetPoint,
-    [targetAxes.x, targetAxes.y, targetAxes.z],
-  );
+}
+
+function makeCameraEntry(name, cameraToDevice, color) {
+  const origin = cameraToDevice.transformPoint([0, 0, 0]);
+  const xAxis = cameraToDevice.transformNormal([1, 0, 0]);
+  const yAxis = cameraToDevice.transformNormal([0, 1, 0]);
+  const zAxis = cameraToDevice.transformNormal([0, 0, 1]);
+  return {
+    name,
+    position: toPoint(origin),
+    color,
+    axes: axesFromColumns(xAxis, yAxis, zAxis),
+    origin,
+    zAxis,
+  };
 }
 
 function makeTransformFromAxes(label, sourcePoint, targetPoint, xAxis, yAxis, zAxis) {
@@ -355,12 +334,14 @@ function makeOpticalPlanePatches(
   deviceAlignment,
   frontAxis,
   rearAxis,
-  rearDisplayTransform,
+  frontTransform,
+  rearTransform,
 ) {
   const planes = [];
   const imagePlanes = makeImagePlanePair(
     calibration,
-    rearDisplayTransform,
+    frontTransform,
+    rearTransform,
   );
   const reflectionPlanes = makeReflectionPlanePair(
     device,
@@ -372,9 +353,13 @@ function makeOpticalPlanePatches(
   return planes;
 }
 
-function makeImagePlanePair(calibration, rearTransform) {
+function makeImagePlanePair(calibration, frontTransform, rearTransform) {
   return {
-    front: frameSurfaceToPlane(calibration.frame_surfaces?.front_frame_pnp, "pnp_frame_pose"),
+    front: transformOptionalPlane(
+      frameSurfaceToPlane(calibration.frame_surfaces?.front_frame_pnp, "pnp_frame_pose"),
+      frontTransform.transformPoint,
+      frontTransform.transformNormal,
+    ),
     rear: transformOptionalPlane(
       frameSurfaceToPlane(calibration.frame_surfaces?.rear_frame_pnp, "pnp_frame_pose"),
       rearTransform.transformPoint,
@@ -520,14 +505,24 @@ function opticalIntersection(axis, plane) {
   return add3(origin, scale3(direction, distance));
 }
 
-function makeFrames(calibration, rearTransform) {
+function makeFrames(calibration, frontTransform, rearTransform) {
   const frames = [];
   const surfaces = calibration.frame_surfaces || {};
   if (surfaces.front_frame_pnp) {
-    frames.push(makeFrameSurface("P1 PnP 实像面", surfaces.front_frame_pnp, (point) => point, (vector) => vector));
+    frames.push(makeFrameSurface(
+      "P1 PnP 实像面",
+      surfaces.front_frame_pnp,
+      frontTransform.transformPoint,
+      frontTransform.transformNormal,
+    ));
   }
   if (surfaces.rear_frame_pnp) {
-    frames.push(makeFrameSurface("P2 PnP 实像面", surfaces.rear_frame_pnp, rearTransform.transformPoint, rearTransform.transformNormal));
+    frames.push(makeFrameSurface(
+      "P2 PnP 实像面",
+      surfaces.rear_frame_pnp,
+      rearTransform.transformPoint,
+      rearTransform.transformNormal,
+    ));
   }
   return frames;
 }

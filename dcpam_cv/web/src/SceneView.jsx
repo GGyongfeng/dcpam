@@ -64,7 +64,46 @@ export function SceneView({ rows, measurement, geometry, layers }) {
     scene.add(root);
 
     const axes = createAxesView(axesRef.current);
-    sceneRef.current = { root, camera, renderer, controls, mount, axes };
+    let active = true;
+    let renderScheduled = false;
+    let interacting = false;
+    let frameIndex = 0;
+    const scheduleRender = () => {
+      if (!active || renderScheduled) return;
+      renderScheduled = true;
+      requestAnimationFrame(tick);
+    };
+    const tick = () => {
+      if (!active) return;
+      renderScheduled = false;
+      const prevX = camera.position.x;
+      const prevY = camera.position.y;
+      const prevZ = camera.position.z;
+      const prevZoom = camera.zoom;
+      controls.update();
+      const cameraMoved =
+        camera.position.x !== prevX ||
+        camera.position.y !== prevY ||
+        camera.position.z !== prevZ ||
+        camera.zoom !== prevZoom;
+      renderer.render(scene, camera);
+      renderAxesView(axes, camera, sceneRef.current?.geometry);
+      if (cameraMoved && frameIndex % 8 === 0) {
+        setCameraPosition({ x: camera.position.x, y: camera.position.y, z: camera.position.z });
+      }
+      frameIndex += 1;
+      if (interacting || cameraMoved) scheduleRender();
+    };
+    controls.addEventListener("start", () => {
+      interacting = true;
+      scheduleRender();
+    });
+    controls.addEventListener("end", () => {
+      interacting = false;
+      scheduleRender();
+    });
+    controls.addEventListener("change", scheduleRender);
+    sceneRef.current = { root, camera, renderer, controls, mount, axes, scheduleRender };
     const raycaster = new THREE.Raycaster();
     raycaster.params.Line.threshold = 0.8;
     const pointer = new THREE.Vector2();
@@ -85,30 +124,22 @@ export function SceneView({ rows, measurement, geometry, layers }) {
 
     const resize = () => {
       const rect = mount.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return;
       renderer.setSize(rect.width, rect.height);
       applyOrthoFrustum(camera, mount);
       controls.handleResize();
+      scheduleRender();
     };
     resize();
     window.addEventListener("resize", resize);
+    const ro = new ResizeObserver(() => resize());
+    ro.observe(mount);
 
-    let active = true;
-    let frameIndex = 0;
-    const animate = () => {
-      if (!active) return;
-      controls.update();
-      renderer.render(scene, camera);
-      renderAxesView(axes, camera, sceneRef.current?.geometry);
-      if (frameIndex % 8 === 0) {
-        setCameraPosition({ x: camera.position.x, y: camera.position.y, z: camera.position.z });
-      }
-      frameIndex += 1;
-      requestAnimationFrame(animate);
-    };
-    animate();
+    scheduleRender();
 
     return () => {
       active = false;
+      ro.disconnect();
       window.removeEventListener("resize", resize);
       renderer.domElement.removeEventListener("pointermove", inspect);
       renderer.domElement.removeEventListener("click", inspect);
@@ -126,24 +157,28 @@ export function SceneView({ rows, measurement, geometry, layers }) {
     clearGroup(context.root);
     buildScene(context.root, rows, measurement, geometry, layers);
     context.geometry = geometry;
+    context.scheduleRender?.();
   }, [rows, measurement, geometry, layers]);
 
   useEffect(() => {
     const context = sceneRef.current;
     if (!context) return;
     fitCamera(context.camera, context.controls, geometry, context.mount);
+    context.scheduleRender?.();
   }, [geometry]);
 
   const setMainView = () => {
     const context = sceneRef.current;
     if (!context) return;
     setHomeView(context.camera, context.controls);
+    context.scheduleRender?.();
   };
 
   const setTopView = () => {
     const context = sceneRef.current;
     if (!context) return;
     setViewAlongY(context.camera, context.controls);
+    context.scheduleRender?.();
   };
 
   return (
@@ -154,7 +189,10 @@ export function SceneView({ rows, measurement, geometry, layers }) {
           <button type="button" onClick={setTopView}>正视图</button>
         </div>
         <div ref={axesRef} className="axes-mount" />
-        <div className="view-direction">camera.position {formatPoint(cameraPosition)}</div>
+        <div className="view-direction">
+          <div className="view-direction-label">camera.position</div>
+          <div className="view-direction-value">{formatPoint(cameraPosition)}</div>
+        </div>
       </div>
       <InspectionPanel info={inspection} />
     </div>

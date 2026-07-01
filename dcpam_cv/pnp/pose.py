@@ -1,3 +1,4 @@
+"""取景框 PnP 位姿求解。"""
 from __future__ import annotations
 
 import cv2
@@ -91,7 +92,6 @@ def _solve_ippe(
     camera_matrix: np.ndarray,
     distortion: np.ndarray,
 ) -> list[tuple[float, np.ndarray, np.ndarray]]:
-    """使用 IPPE 求平面目标的候选解。"""
     ok, rotations, translations, _ = cv2.solvePnPGeneric(
         object_points,
         image_points,
@@ -110,7 +110,6 @@ def _solve_single(
     camera_matrix: np.ndarray,
     distortion: np.ndarray,
 ) -> list[tuple[float, np.ndarray, np.ndarray]]:
-    """使用通用 PnP 求解器生成候选解。"""
     candidates = []
     for flag in (cv2.SOLVEPNP_ITERATIVE, cv2.SOLVEPNP_SQPNP):
         ok, rotation, translation = cv2.solvePnP(
@@ -137,7 +136,6 @@ def _valid_candidates(
     rotations: tuple[np.ndarray, ...],
     translations: tuple[np.ndarray, ...],
 ) -> list[tuple[float, np.ndarray, np.ndarray]]:
-    """过滤位于相机后方的候选解，并计算误差。"""
     candidates = []
     for rotation, translation in zip(rotations, translations, strict=True):
         if float(translation.reshape(3)[2]) <= 0:
@@ -155,13 +153,11 @@ def _reprojection_error(
     camera_matrix: np.ndarray,
     distortion: np.ndarray,
 ) -> float:
-    """计算四个角点的 RMS 重投影误差。"""
     projected, _ = cv2.projectPoints(object_points, rotation, translation, camera_matrix, distortion)
     residual = projected.reshape(-1, 2) - image_points
     return float(np.sqrt(np.mean(np.sum(residual * residual, axis=1))))
 
 
 def _matrix(rotation_vector: np.ndarray) -> list[list[float]]:
-    """Rodrigues 旋转向量转 3x3 矩阵。"""
     rotation, _ = cv2.Rodrigues(rotation_vector)
     return rotation.astype(float).tolist()

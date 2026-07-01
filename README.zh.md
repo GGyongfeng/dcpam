@@ -33,6 +33,16 @@ uv sync
 
 ## 使用
 
+运行 Web 界面（同时启动 FastAPI 后端 + Vite 前端）：
+
+```bash
+uv run dcpam
+```
+
+启动后浏览器打开 Vite 给出的地址（默认 http://127.0.0.1:5173/）。
+顶部有 *分析 / 测量* 两个 tab：分析模式上传 TOML + CSV 复现历史样本；
+测量模式上传 TOML 后接相机实时预览，按"拍照 + 测量"自动连拍 N 张取均值并写入 `data/measurements.jsonl`。
+
 运行精度分析脚本：
 
 ```bash
@@ -47,14 +57,17 @@ uv run python dual_daheng_capture.py
 
 使用采集工具前，请确认：
 
-- 已连接两台大恒相机
-- 已安装 Daheng Galaxy SDK
-- 运行环境可以正确导入 `gxipy`
+- 已连接两台相机
+- macOS：已 `brew install aravis pygobject3 libffi`
+- 如需大恒 Windows SDK 版采集脚本，额外安装 Daheng Galaxy SDK 与 `gxipy`
 
 ## 仓库结构
 
 - `dcpam_cv/`：可复用的 CV 与精度分析代码
+- `dcpam_cv/server/`：FastAPI 后端（拍照、圆心提取、JSONL 落盘）
+- `dcpam_cv/web/`：React + Three.js 前端
 - `scripts/`：可直接运行的脚本
+- `data/`：测量模式输出目录（imgs/ + measurements.jsonl，已加入 .gitignore）
 - `pictures/`：采集图片保存目录
 - `docs/`：项目说明与规范文档
 - `dual_daheng_capture.py`：实时预览与双相机成对采集入口

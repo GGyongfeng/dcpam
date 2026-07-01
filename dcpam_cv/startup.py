@@ -71,12 +71,15 @@ def _check_network() -> CheckResult:
         return CheckResult(name="交换机 IP", passed=True, message=_HOST_IP)
 
     iface = _find_ethernet_iface(result.stdout)
-    iface_hint = iface or "enX"
+    if iface:
+        remedy = f"uv run dcpam net  # 自动配置 {iface}"
+    else:
+        remedy = "先连接相机网线后运行：uv run dcpam net"
     return CheckResult(
         name="交换机 IP",
         passed=False,
         message=f"未配置 {_HOST_IP}",
-        remedy=f"sudo ifconfig {iface_hint} {_HOST_IP} netmask 255.255.255.0 up",
+        remedy=remedy,
     )
 
 
@@ -182,3 +185,13 @@ def startup(paths: DCPAMPaths) -> None:
         if user_input == "q":
             raise SystemExit(0)
         console.print()
+
+
+def print_health_report(paths: DCPAMPaths) -> list[CheckResult]:
+    """非交互式：打印 banner + 检查结果，返回结果列表供调用方判断。"""
+    console = Console()
+    _print_banner(console)
+    results = run_checks(paths)
+    _print_results(console, results)
+    console.print()
+    return results

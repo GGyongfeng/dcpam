@@ -123,13 +123,13 @@ SOLVEPNP_SQPNP
 脚本位于：
 
 ```text
-scripts/5_estimate_frame_poses.py
+scripts/pnp_定位.py
 ```
 
-默认执行：
+默认执行（传入 frame 目录）：
 
 ```bash
-uv run python scripts/5_estimate_frame_poses.py
+uv run python scripts/pnp_定位.py --frame-dir dataset/data-0629/frame
 ```
 
 它会把结果写入：
@@ -171,11 +171,8 @@ t_frame_to_camera = point
 
 ## 6. 当前结果
 
-脚本同时保存结果摘要：
-
-```text
-docs/design/frame-pose-pnp-results.csv
-```
+脚本运行时会在 stdout 打印两侧的 PnP 摘要（中心、法向、重投影误差），
+具体数值以最新一次写入 `config.toml` 的 `calibration.frame_surfaces` 为准。
 
 当前前相机取景框中心在前相机坐标系下为：
 

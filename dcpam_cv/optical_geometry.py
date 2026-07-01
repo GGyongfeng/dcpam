@@ -35,7 +35,7 @@ class OpticalGeometry:
         if front_frame is None or rear_frame is None:
             raise ValueError("配置缺少 PnP 实像面，无法构建光学几何")
         if calibration.front_camera_to_device is None or calibration.rear_camera_to_device is None:
-            raise ValueError("配置缺少 camera_to_device 变换，先跑 scripts/10_estimate_frame_poses.py")
+            raise ValueError("配置缺少 camera_to_device 变换，先跑 scripts/pnp_定位.py")
 
         self.front_image_real = _plane_from_frame(front_frame)
         self.rear_image_real = _plane_from_frame(rear_frame)

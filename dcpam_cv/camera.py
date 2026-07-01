@@ -213,7 +213,10 @@ class DualCamera:
             camera.set_gain(hw.gain)
 
     def _grab_frame(self, handle: _CameraHandle) -> np.ndarray:
-        """排空旧帧后等待最新帧，转为 BGR numpy 数组。"""
+        """排空旧帧后等待最新帧，转为 numpy 数组。
+
+        单色相机返回 (H, W) 灰度；Bayer/RGB 返回 (H, W, 3) BGR。
+        """
         arv = _get_aravis()
 
         while True:
@@ -238,15 +241,14 @@ class DualCamera:
 
         if "Bayer" in pixel_format:
             raw = arr.reshape(handle.height, handle.width)
-            bgr = cv2.cvtColor(raw, cv2.COLOR_BayerRG2BGR)
+            frame = cv2.cvtColor(raw, cv2.COLOR_BayerRG2BGR)
         elif "Mono" in pixel_format or "Grey" in pixel_format:
-            raw = arr.reshape(handle.height, handle.width)
-            bgr = cv2.cvtColor(raw, cv2.COLOR_GRAY2BGR)
+            frame = arr.reshape(handle.height, handle.width).copy()
         elif "RGB" in pixel_format:
             rgb = arr.reshape(handle.height, handle.width, 3)
-            bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+            frame = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
         else:
-            bgr = arr.reshape(handle.height, handle.width, -1)
+            frame = arr.reshape(handle.height, handle.width, -1).copy()
 
         handle.stream.push_buffer(latest)
-        return bgr
+        return frame
