@@ -5,7 +5,7 @@ import { DEFAULT_LAYERS, LayersDrawer } from "../components/LayersDrawer.jsx";
 import { ProcessPanel } from "../components/ProcessPanel.jsx";
 import { AppShell } from "../layout/AppShell.jsx";
 import { buildGeometry } from "../geometry.js";
-import { measureRow } from "../pipeline.js";
+import { measureRow, aggregateDistance } from "../pipeline.js";
 import { useStoredText } from "../storage.js";
 
 const STORAGE_KEYS = {
@@ -32,16 +32,52 @@ export function MeasurementMode({ mode, setMode, mainPanel, setMainPanel, tomlCo
   const [capturing, setCapturing] = useState(false);
   const [status, setStatus] = useState({ kind: "idle", text: "" });
   const [cameraHealth, setCameraHealth] = useState({ ok: null, message: "" });
+  const [captureElapsedMs, setCaptureElapsedMs] = useState(null);
+  const [captureStartAt, setCaptureStartAt] = useState(null);
+  const [nowTs, setNowTs] = useState(0);
+  const [exportSelection, setExportSelection] = useState(() => new Set());
+  const [exporting, setExporting] = useState(false);
+  const [listStatus, setListStatus] = useState({ kind: "idle", text: "" });
 
-  const geometryState = useMemo(() => {
-    if (!tomlConfig) return { error: "", geometry: null };
-    try {
-      return { error: "", geometry: buildGeometry(tomlConfig, DEFAULT_ALGORITHM) };
-    } catch (error) {
-      return { error: error instanceof Error ? error.message : String(error), geometry: null };
+  useEffect(() => {
+    if (!capturing || captureStartAt == null) return;
+    const tick = () => setNowTs(Date.now());
+    tick();
+    const id = setInterval(tick, 100);
+    return () => clearInterval(id);
+  }, [capturing, captureStartAt]);
+
+  const liveElapsedMs = capturing && captureStartAt != null ? Math.max(0, nowTs - captureStartAt) : null;
+
+  useEffect(() => {
+    if (!records.length) {
+      setExportSelection((prev) => (prev.size ? new Set() : prev));
+      return;
     }
-  }, [tomlConfig]);
-  const geometry = geometryState.geometry;
+    setExportSelection((prev) => {
+      const validIds = new Set(records.map((r) => r.id));
+      let changed = false;
+      const next = new Set();
+      for (const id of prev) {
+        if (validIds.has(id)) next.add(id);
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [records]);
+
+  const toggleExportSelection = useCallback((id) => {
+    setExportSelection((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const setAllExportSelection = useCallback((ids) => {
+    setExportSelection(new Set(ids));
+  }, []);
 
   const refreshRecords = useCallback(async () => {
     try {
@@ -64,10 +100,113 @@ export function MeasurementMode({ mode, setMode, mainPanel, setMainPanel, tomlCo
     }
   }, []);
 
+  const handleExportZip = useCallback(async () => {
+    if (exporting) return;
+    const ids = [...exportSelection];
+    if (!ids.length) {
+      setListStatus({ kind: "error", text: "请先勾选要导出的采样" });
+      return;
+    }
+    setExporting(true);
+    setListStatus({ kind: "info", text: `正在打包 ${ids.length} 个采样...` });
+    try {
+      const response = await fetch("/api/measurements/export-zip", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+      if (!response.ok) {
+        let detail = `HTTP ${response.status}`;
+        try {
+          const payload = await response.json();
+          detail = payload?.detail || detail;
+        } catch (_) {}
+        throw new Error(detail);
+      }
+      const disposition = response.headers.get("Content-Disposition") || "";
+      const nameMatch = disposition.match(/filename="?([^";]+)"?/i);
+      const filename = nameMatch ? nameMatch[1] : `measurements_${ids.length}.zip`;
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      setListStatus({ kind: "ok", text: `已导出 ${ids.length} 个采样：${filename}` });
+    } catch (error) {
+      setListStatus({ kind: "error", text: `导出失败：${error.message}` });
+    } finally {
+      setExporting(false);
+    }
+  }, [exportSelection, exporting]);
+
+  const handleDeleteRecords = useCallback(async (idsToDelete, { silent } = {}) => {
+    const ids = [...new Set(idsToDelete || [])].filter(Boolean);
+    if (!ids.length) return;
+    if (!silent) {
+      const label = ids.length === 1 ? ids[0] : `${ids.length} 个采样`;
+      const confirmed = window.confirm(`确认删除 ${label} 吗？此操作不可撤销。`);
+      if (!confirmed) return;
+    }
+    setListStatus({ kind: "info", text: `正在删除 ${ids.length} 个采样...` });
+    const failed = [];
+    for (const id of ids) {
+      try {
+        const response = await fetch(`/api/measurements/${encodeURIComponent(id)}`, {
+          method: "DELETE",
+        });
+        if (!response.ok) {
+          let detail = `HTTP ${response.status}`;
+          try {
+            const payload = await response.json();
+            detail = payload?.detail || detail;
+          } catch (_) {}
+          failed.push(`${id}:${detail}`);
+        }
+      } catch (error) {
+        failed.push(`${id}:${error.message}`);
+      }
+    }
+    setRecords((current) => current.filter((r) => !ids.includes(r.id)));
+    setExportSelection((prev) => {
+      const next = new Set(prev);
+      ids.forEach((id) => next.delete(id));
+      return next;
+    });
+    setSelectedId((current) => (ids.includes(current) ? "" : current));
+    if (failed.length) {
+      setListStatus({ kind: "error", text: `删除失败：${failed.slice(0, 3).join("; ")}` });
+    } else {
+      setListStatus({ kind: "ok", text: `已删除 ${ids.length} 个采样` });
+    }
+    refreshRecords();
+  }, [refreshRecords]);
+
+  const geometryState = useMemo(() => {
+    if (!tomlConfig) return { error: "", geometry: null };
+    try {
+      return { error: "", geometry: buildGeometry(tomlConfig, DEFAULT_ALGORITHM) };
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error), geometry: null };
+    }
+  }, [tomlConfig]);
+  const geometry = geometryState.geometry;
+
   useEffect(() => {
     refreshRecords();
     refreshHealth();
   }, [refreshRecords, refreshHealth]);
+
+  useEffect(() => {
+    if (capturing) return;
+    const id = setInterval(() => {
+      refreshHealth();
+    }, 3000);
+    return () => clearInterval(id);
+  }, [refreshHealth, capturing]);
 
   useEffect(() => {
     if (!records.length) {
@@ -84,10 +223,16 @@ export function MeasurementMode({ mode, setMode, mainPanel, setMainPanel, tomlCo
     [records, selectedId],
   );
   const measurementRow = useMemo(() => recordToMeasurementRow(selectedRecord), [selectedRecord]);
-  const measurement = useMemo(
-    () => measureRow(measurementRow, geometry, tomlConfig),
-    [measurementRow, geometry, tomlConfig],
+  const aggregate = useMemo(
+    () => aggregateDistance(selectedRecord, geometry, tomlConfig),
+    [selectedRecord, geometry, tomlConfig],
   );
+  // 3D 场景 & 中间步骤展示：优先用 aggregate 的代表帧（保证与最终距离一致）；
+  // 缺 frames 数据的旧样本回退到 mean-UV pipeline。
+  const measurement = useMemo(() => {
+    if (aggregate?.representative) return aggregate.representative;
+    return measureRow(measurementRow, geometry, tomlConfig);
+  }, [aggregate, measurementRow, geometry, tomlConfig]);
 
   // 名称变化 → 查询该 name 在磁盘上的下一个可用 index
   useEffect(() => {
@@ -110,6 +255,10 @@ export function MeasurementMode({ mode, setMode, mainPanel, setMainPanel, tomlCo
     const n = parseCaptureN(captureN);
     const name = (sampleName || "sample").trim() || "sample";
     const index = Math.max(1, parseInt(sampleIndex, 10) || 1);
+    const startAt = Date.now();
+    setCaptureStartAt(startAt);
+    setNowTs(startAt);
+    setCaptureElapsedMs(null);
     setCapturing(true);
     setStatus({ kind: "info", text: `正在拍 ${name}-${String(index).padStart(3, "0")}（${n} 张）...` });
     try {
@@ -123,15 +272,22 @@ export function MeasurementMode({ mode, setMode, mainPanel, setMainPanel, tomlCo
         const detail = payload?.detail || `HTTP ${response.status}`;
         throw new Error(detail);
       }
-      setStatus({ kind: "ok", text: `已采样 ${payload.id}（${payload.valid_n}/${payload.n} 帧）` });
+      const elapsed = Date.now() - startAt;
+      setCaptureElapsedMs(elapsed);
+      setStatus({
+        kind: "ok",
+        text: `已采样 ${payload.id}（${payload.valid_n}/${payload.n} 帧，用时 ${formatElapsed(elapsed)}）`,
+      });
       setRecords((current) => [...current, payload]);
       setSelectedId(payload.id);
       setSampleIndex(index + 1);
       refreshHealth();
     } catch (error) {
+      setCaptureElapsedMs(Date.now() - startAt);
       setStatus({ kind: "error", text: `拍照失败：${error.message}` });
     } finally {
       setCapturing(false);
+      setCaptureStartAt(null);
     }
   };
 
@@ -169,7 +325,7 @@ export function MeasurementMode({ mode, setMode, mainPanel, setMainPanel, tomlCo
         rearSpot: measurement?.spots?.rear,
       }
     : null;
-  const steps = measurementSteps(selectedRecord, measurement);
+  const steps = measurementSteps(selectedRecord, measurement, aggregate);
 
   return (
     <AppShell
@@ -197,6 +353,15 @@ export function MeasurementMode({ mode, setMode, mainPanel, setMainPanel, tomlCo
           records={records}
           selectedId={selectedRecord?.id || ""}
           setSelectedId={setSelectedId}
+          liveElapsedMs={liveElapsedMs}
+          captureElapsedMs={captureElapsedMs}
+          exportSelection={exportSelection}
+          toggleExportSelection={toggleExportSelection}
+          setAllExportSelection={setAllExportSelection}
+          onExportZip={handleExportZip}
+          exporting={exporting}
+          onDeleteRecords={handleDeleteRecords}
+          listStatus={listStatus}
         />
       }
       sceneSlot={
@@ -230,7 +395,16 @@ function LeftSidebar({
   previewOn, setPreviewOn, capturing, onCapture, status,
   cameraHealth, onReconnect, onRefreshHealth,
   records, selectedId, setSelectedId,
+  liveElapsedMs, captureElapsedMs,
+  exportSelection, toggleExportSelection, setAllExportSelection,
+  onExportZip, exporting,
+  onDeleteRecords,
+  listStatus,
 }) {
+  const allIds = useMemo(() => records.map((r) => r.id), [records]);
+  const selectedCount = exportSelection.size;
+  const allSelected = allIds.length > 0 && selectedCount === allIds.length;
+
   return (
     <div className="left-stack">
       <section className="section">
@@ -249,30 +423,95 @@ function LeftSidebar({
           capturing={capturing}
           onCapture={onCapture}
           status={status}
+          liveElapsedMs={liveElapsedMs}
+          captureElapsedMs={captureElapsedMs}
         />
       </section>
 
       <section className="section sample-list-section">
         <div className="section-title-row">
           <h3>历史 ({records.length})</h3>
+          <div className="sample-list-actions">
+            <button
+              type="button"
+              className="link-button"
+              disabled={!allIds.length}
+              onClick={() => setAllExportSelection(allSelected ? [] : allIds)}
+              title={allSelected ? "取消全选" : "全选当前列表"}
+            >
+              {allSelected ? "清除" : "全选"}
+            </button>
+            <button
+              type="button"
+              className="export-zip-button"
+              disabled={exporting || selectedCount === 0}
+              onClick={onExportZip}
+              title={selectedCount === 0 ? "先勾选要导出的采样" : `导出 ${selectedCount} 个采样为 zip`}
+            >
+              {exporting ? "打包中..." : `导出 ZIP (${selectedCount})`}
+            </button>
+            <button
+              type="button"
+              className="delete-batch-button"
+              disabled={selectedCount === 0}
+              onClick={() => onDeleteRecords([...exportSelection])}
+              title={selectedCount === 0 ? "先勾选要删除的采样" : `删除选中的 ${selectedCount} 个采样`}
+            >
+              {`删除 (${selectedCount})`}
+            </button>
+          </div>
         </div>
         <div className="sample-list">
           {records.length === 0 ? (
             <div className="sample-empty">尚无采样记录</div>
           ) : (
-            [...records].reverse().map((record) => (
-              <button
-                type="button"
-                key={record.id}
-                className={`sample-item ${record.id === selectedId ? "active" : ""}`}
-                onClick={() => setSelectedId(record.id)}
-              >
-                <span>{record.id}</span>
-                <span className="sample-item-meta">n={record.valid_n ?? record.n}</span>
-              </button>
-            ))
+            [...records].reverse().map((record) => {
+              const active = record.id === selectedId;
+              const picked = exportSelection.has(record.id);
+              return (
+                <div
+                  key={record.id}
+                  className={`sample-item-row${active ? " active" : ""}${picked ? " picked" : ""}`}
+                >
+                  <label
+                    className="sample-item-check"
+                    title="勾选后可批量导出或删除"
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={picked}
+                      onChange={() => toggleExportSelection(record.id)}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="sample-item"
+                    onClick={() => setSelectedId(record.id)}
+                  >
+                    <span>{record.id}</span>
+                    <span className="sample-item-meta">n={record.valid_n ?? record.n}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="sample-item-delete"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onDeleteRecords([record.id]);
+                    }}
+                    title={`删除 ${record.id}`}
+                    aria-label={`删除 ${record.id}`}
+                  >
+                    <TrashIcon />
+                  </button>
+                </div>
+              );
+            })
           )}
         </div>
+        {listStatus && listStatus.text && (
+          <div className={`capture-status status-${listStatus.kind}`}>{listStatus.text}</div>
+        )}
       </section>
     </div>
   );
@@ -281,7 +520,7 @@ function LeftSidebar({
 function CameraModule({
   health, onReconnect, onRefresh, previewOn, setPreviewOn,
   captureN, setCaptureN, sampleName, setSampleName, sampleIndex, setSampleIndex,
-  capturing, onCapture, status,
+  capturing, onCapture, status, liveElapsedMs, captureElapsedMs,
 }) {
   const isConnected = health.ok === true;
   const isDetecting = health.ok === null;
@@ -371,12 +610,34 @@ function CameraModule({
         </label>
         <button
           type="button"
-          className="capture-button"
-          disabled={capturing}
+          className={`capture-button${isConnected ? " is-connected" : ""}`}
+          disabled={capturing || !isConnected}
           onClick={onCapture}
+          title={
+            !isConnected
+              ? "相机未连接，先点左上角按钮尝试连接"
+              : "开始一次拍照 + 测量"
+          }
         >
-          {capturing ? "正在拍..." : `拍照 + 测量（${(sampleName || "sample").trim() || "sample"}-${String(sampleIndex).padStart(3, "0")}）`}
+          {capturing
+            ? `正在拍...${liveElapsedMs != null ? ` ${formatElapsed(liveElapsedMs)}` : ""}`
+            : `拍照 + 测量（${(sampleName || "sample").trim() || "sample"}-${String(sampleIndex).padStart(3, "0")}）`}
         </button>
+        {(capturing || captureElapsedMs != null) && (
+          <div className="capture-timing">
+            {capturing ? (
+              <>
+                <span>本次采样用时:</span>
+                <span className="timing-value">{formatElapsed(liveElapsedMs ?? 0)}</span>
+              </>
+            ) : (
+              <>
+                <span>上次采样用时:</span>
+                <span className="timing-value">{formatElapsed(captureElapsedMs)}</span>
+              </>
+            )}
+          </div>
+        )}
         {status.text && <div className={`capture-status status-${status.kind}`}>{status.text}</div>}
       </div>
     </div>
@@ -413,6 +674,18 @@ function EyeIcon({ open }) {
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
       <line x1="1" y1="1" x2="23" y2="23" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="3 6 5 6 21 6" />
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
+      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
     </svg>
   );
 }
@@ -490,6 +763,16 @@ function parseCaptureN(value) {
   return Math.max(1, Math.min(50, n));
 }
 
+function formatElapsed(ms) {
+  if (!Number.isFinite(ms) || ms < 0) return "--";
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  const seconds = ms / 1000;
+  if (seconds < 60) return `${seconds.toFixed(2)} s`;
+  const m = Math.floor(seconds / 60);
+  const s = seconds - m * 60;
+  return `${m} min ${s.toFixed(1)} s`;
+}
+
 function formatNetHint(net) {
   if (!net || typeof net !== "object") return "";
   switch (net.status) {
@@ -518,15 +801,17 @@ function formatPoint(point) {
   return `(${format(point.x)}, ${format(point.y)}, ${format(point.z)})`;
 }
 
-function measurementSteps(record, measurement) {
+function measurementSteps(record, measurement, aggregate) {
   if (!record) return [{ title: "等待样本", lines: ["上传 config.toml 后按下\"拍照 + 测量\"开始采样"] }];
   const frontMean = record.front_uv_mean || [];
   const rearMean = record.rear_uv_mean || [];
   const frontStd = record.front_uv_std || [];
   const rearStd = record.rear_uv_std || [];
+  const nTotal = aggregate?.nTotal ?? (record.valid_n ?? record.n);
+  const nUsed = aggregate?.nUsed ?? nTotal;
   const stats = [
     {
-      title: `1. 圆心提取（n=${record.valid_n ?? record.n}）`,
+      title: `1. 圆心提取（n=${nTotal}${aggregate ? `，有效 ${nUsed}` : ""}）`,
       lines: [
         `前相机均值 uv=(${format(frontMean[0])}, ${format(frontMean[1])})  std=(${format(frontStd[0])}, ${format(frontStd[1])})`,
         `后相机均值 uv=(${format(rearMean[0])}, ${format(rearMean[1])})  std=(${format(rearStd[0])}, ${format(rearStd[1])})`,
@@ -561,10 +846,34 @@ function measurementSteps(record, measurement) {
     },
     {
       title: "5. 求解结果",
-      lines: [
-        `靶点：${formatPoint(measurement.target)}，设备系`,
-        `靶点到激光线距离：${format(measurement.distance)} mm`,
-      ],
+      lines: buildResultLines(measurement, aggregate),
     },
   ]);
+}
+
+function buildResultLines(measurement, aggregate) {
+  const lines = [`靶点：${formatPoint(measurement.target)}，设备系`];
+  if (aggregate && aggregate.nUsed > 0) {
+    const std = Number.isFinite(aggregate.distanceStd) ? aggregate.distanceStd : 0;
+    lines.push(
+      `靶点到激光线距离：${format(aggregate.distanceMean)} ± ${format(std)} mm` +
+      `  (n=${aggregate.nUsed}/${aggregate.nTotal})`,
+    );
+    const dropped = aggregate.nTotal - aggregate.nUsed;
+    if (dropped > 0) {
+      const bits = [];
+      if (aggregate.nDroppedByConfidence > 0) {
+        bits.push(`置信度 ${aggregate.nDroppedByConfidence}`);
+      }
+      if (aggregate.nDroppedByMAD > 0) {
+        bits.push(`距离离群 ${aggregate.nDroppedByMAD}`);
+      }
+      lines.push(`已剔除 ${dropped} 帧：${bits.join("，")}`);
+    }
+  } else if (aggregate) {
+    lines.push(`靶点到激光线距离：无有效帧 (n=0/${aggregate.nTotal})`);
+  } else {
+    lines.push(`靶点到激光线距离：${format(measurement.distance)} mm`);
+  }
+  return lines;
 }

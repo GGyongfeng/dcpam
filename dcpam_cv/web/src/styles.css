@@ -1217,11 +1217,26 @@ tbody tr:hover td {
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: opacity 120ms ease;
+  transition: background-color 120ms ease, color 120ms ease, opacity 120ms ease;
 }
 
 .capture-button:hover:not(:disabled) {
-  opacity: 0.85;
+  background: #2a2a30;
+  color: var(--bg);
+  border-color: transparent;
+  opacity: 1;
+}
+
+.capture-button.is-connected {
+  background: #16a34a;
+  color: #ffffff;
+}
+
+.capture-button.is-connected:hover:not(:disabled) {
+  background: #15803d;
+  color: #ffffff;
+  border-color: transparent;
+  opacity: 1;
 }
 
 .capture-button:disabled {
@@ -1230,10 +1245,26 @@ tbody tr:hover td {
   cursor: not-allowed;
 }
 
+.capture-timing {
+  margin-top: 2px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.capture-timing .timing-value {
+  color: var(--text);
+  font-weight: 600;
+}
+
 .capture-status {
   font-size: 12px;
   padding: 6px 10px;
   border-radius: 6px;
+  white-space: pre-line;
 }
 
 .status-info {
@@ -1394,6 +1425,133 @@ tbody tr:hover td {
   text-align: center;
 }
 
+.sample-item-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 4px;
+  padding: 0 2px 0 4px;
+  border-radius: 6px;
+  transition: background 100ms ease;
+}
+
+.sample-item-row.picked {
+  background: rgba(22, 163, 74, 0.08);
+}
+
+.sample-item-row.active {
+  background: var(--text);
+}
+
+.sample-item-row.active.picked {
+  background: var(--text);
+  outline: 1px solid rgba(22, 163, 74, 0.6);
+}
+
+.sample-item-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  cursor: pointer;
+}
+
+.sample-item-check input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  accent-color: #16a34a;
+}
+
+.sample-item-row .sample-item {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+}
+
+.sample-item-row.active .sample-item {
+  color: var(--bg);
+}
+
+.sample-item-row.active .sample-item-meta {
+  color: var(--bg);
+  opacity: 0.7;
+}
+
+.sample-item-delete {
+  border: none;
+  background: transparent;
+  color: var(--faint);
+  padding: 4px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: background 120ms ease, color 120ms ease, opacity 120ms ease;
+}
+
+.sample-item-row:hover .sample-item-delete,
+.sample-item-row.active .sample-item-delete,
+.sample-item-row.picked .sample-item-delete {
+  opacity: 1;
+}
+
+.sample-item-delete:hover {
+  background: rgba(220, 38, 38, 0.12);
+  color: #dc2626;
+}
+
+.sample-item-row.active .sample-item-delete {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.sample-item-row.active .sample-item-delete:hover {
+  background: rgba(220, 38, 38, 0.35);
+  color: #ffffff;
+}
+
+.sample-list-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.export-zip-button,
+.delete-batch-button {
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--text);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-family: var(--mono);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.export-zip-button:hover:not(:disabled) {
+  background: #16a34a;
+  color: #ffffff;
+  border-color: #16a34a;
+}
+
+.delete-batch-button:hover:not(:disabled) {
+  background: #dc2626;
+  color: #ffffff;
+  border-color: #dc2626;
+}
+
+.export-zip-button:disabled,
+.delete-batch-button:disabled {
+  color: var(--muted);
+  border-color: var(--line);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
 .sample-item {
   display: flex;
   align-items: center;
@@ -1429,6 +1587,17 @@ tbody tr:hover td {
 .sample-item.active .sample-item-meta {
   color: var(--bg);
   opacity: 0.7;
+}
+
+/* 已激活行（黑底）上，鼠标悬停不再叠浅灰盖住白字，
+   而是用一层微弱的高光；picked 行悬停也只做轻微加深，不与选中态打架。 */
+.sample-item-row.active .sample-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--bg);
+}
+
+.sample-item-row.picked:not(.active) .sample-item:hover {
+  background: rgba(22, 163, 74, 0.16);
 }
 
 .preview-section .preview-block {

@@ -1,6 +1,7 @@
 """DCPAM Web 后端：提供拍照、预览、JSONL 落盘 API。"""
 from __future__ import annotations
 
+import io
 import json
 import os
 import re
@@ -8,6 +9,7 @@ import subprocess
 import threading
 import time
 import tomllib
+import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -41,6 +43,29 @@ PREVIEW_INTERVAL_S = 0.1  # ~10 fps
 _camera_lock = threading.RLock()
 _camera = None
 _camera_error: Optional[str] = None
+_last_capture_error: Optional[str] = None
+_last_capture_ts: float = 0.0
+
+
+def _mark_capture_ok() -> None:
+    global _last_capture_error, _last_capture_ts
+    with _camera_lock:
+        _last_capture_error = None
+        _last_capture_ts = time.time()
+
+
+def _mark_capture_failed(message: str) -> None:
+    """记录采集失败；同时把缓存的相机丢掉，逼迫下次 open()。"""
+    global _camera, _last_capture_error, _last_capture_ts
+    with _camera_lock:
+        _last_capture_error = message or "capture failed"
+        _last_capture_ts = time.time()
+        if _camera is not None:
+            try:
+                _camera.close()
+            except Exception:
+                pass
+        _camera = None
 
 
 def _get_camera():
@@ -63,7 +88,7 @@ def _get_camera():
 
 
 def _close_camera() -> None:
-    global _camera, _camera_error
+    global _camera, _camera_error, _last_capture_error
     with _camera_lock:
         if _camera is not None:
             try:
@@ -72,6 +97,7 @@ def _close_camera() -> None:
                 pass
         _camera = None
         _camera_error = None
+        _last_capture_error = None
 
 
 def _reset_camera_error() -> None:
@@ -120,14 +146,43 @@ def _log_health_change(ok: bool, message: str = "") -> None:
 
 @app.get("/api/health")
 def health() -> dict:
-    try:
-        _get_camera()
+    """相机健康：只有真实抓到过帧才算 ok；最近一次抓帧失败就报错。"""
+    with _camera_lock:
+        cached = _camera
+        last_err = _last_capture_error
+    if cached is None:
+        try:
+            _get_camera()
+        except Exception as exc:
+            msg = _describe(exc)
+            _log_health_change(False, msg)
+            return {"camera": "error", "message": msg}
+        # 首次打开后再做一次真实抓帧确认
+        try:
+            _probe_capture()
+        except Exception as exc:
+            msg = _describe(exc)
+            _log_health_change(False, msg)
+            return {"camera": "error", "message": msg}
         _log_health_change(True)
         return {"camera": "ok"}
-    except Exception as exc:
-        msg = _describe(exc)
-        _log_health_change(False, msg)
-        return {"camera": "error", "message": msg}
+    if last_err:
+        _log_health_change(False, last_err)
+        return {"camera": "error", "message": last_err}
+    _log_health_change(True)
+    return {"camera": "ok"}
+
+
+def _probe_capture() -> None:
+    """做一次真实抓帧确认相机在线。失败时抛异常并把 cache 清掉。"""
+    with _camera_lock:
+        cam = _get_camera()
+        try:
+            cam.capture()
+        except Exception as exc:
+            _mark_capture_failed(_describe(exc))
+            raise
+        _mark_capture_ok()
 
 
 @app.post("/api/camera/reconnect")
@@ -140,13 +195,22 @@ def camera_reconnect() -> dict:
     _reset_camera_error()
     try:
         _get_camera()
-        return {"camera": "ok", "net": net_status}
     except Exception as exc:
         detail = {
             "message": f"相机连接失败:{_describe(exc)}",
             "net": net_status,
         }
         raise HTTPException(503, detail) from exc
+    # open() 成功也不代表网线还接着——再抓一帧验证
+    try:
+        _probe_capture()
+    except Exception as exc:
+        detail = {
+            "message": f"相机断线:{_describe(exc)}",
+            "net": net_status,
+        }
+        raise HTTPException(503, detail) from exc
+    return {"camera": "ok", "net": net_status}
 
 
 def _find_camera_interface() -> Optional[str]:
@@ -215,7 +279,9 @@ def _encode_jpeg(frame: np.ndarray) -> bytes:
 
 def _error_frame(message: str) -> bytes:
     canvas = np.zeros((360, 640, 3), dtype=np.uint8)
-    cv2.putText(canvas, message[:60], (20, 180), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+    # cv2.putText 不支持中文；把非 ASCII 字符替换掉，避免乱码
+    ascii_msg = (message or "camera error").encode("ascii", "replace").decode("ascii")
+    cv2.putText(canvas, ascii_msg[:60], (20, 180), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
     return _encode_jpeg(canvas)
 
 
@@ -226,10 +292,12 @@ def _preview_generator(which: str):
             with _camera_lock:
                 cam = _get_camera()
                 pair = cam.capture()
+            _mark_capture_ok()
             frame = pair.front if which == "front" else pair.rear
             jpeg = _encode_jpeg(frame)
         except Exception as exc:
-            jpeg = _error_frame(str(exc))
+            _mark_capture_failed(_describe(exc))
+            jpeg = _error_frame(_describe(exc))
         yield boundary + b"Content-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n"
         time.sleep(PREVIEW_INTERVAL_S)
 
@@ -317,6 +385,7 @@ def capture(req: CaptureRequest = Body(default=CaptureRequest())) -> dict:
             try:
                 pair = cam.capture()
             except Exception as exc:
+                _mark_capture_failed(_describe(exc))
                 raise HTTPException(500, f"第 {i + 1} 帧拍照失败：{_describe(exc)}") from exc
 
             front_path = sample_dir / f"cam1_{i:03d}.png"
@@ -327,6 +396,7 @@ def capture(req: CaptureRequest = Body(default=CaptureRequest())) -> dict:
 
         for fut in write_futures:
             fut.result()
+    _mark_capture_ok()
     t_capture_done = time.perf_counter()
 
     # 阶段 2：批量提圆心
@@ -344,7 +414,7 @@ def capture(req: CaptureRequest = Body(default=CaptureRequest())) -> dict:
             rear_uv = None
             front_q = None
             rear_q = None
-            extraction_errors.append(f"frame {i}:{_describe(exc)}")
+            extraction_errors.append(f"frame {i}: {_describe(exc)}")
 
         frames.append({
             "index": i,
@@ -362,7 +432,10 @@ def capture(req: CaptureRequest = Body(default=CaptureRequest())) -> dict:
 
     if valid_front.size == 0 or valid_rear.size == 0:
         # 提取全失败：留下图但删空 record dir
-        raise HTTPException(500, "圆心提取全部失败：" + ";".join(extraction_errors[:3]))
+        raise HTTPException(
+            500,
+            "圆心提取全部失败：\n" + "\n".join(extraction_errors[:5]),
+        )
 
     # 聚合各帧 confidence（min / mean），方便前端一眼判断这次采样质量
     def _agg_confidence(side: str) -> dict:
@@ -425,6 +498,30 @@ def list_measurements() -> list[dict]:
     return _load_measurements()
 
 
+@app.delete("/api/measurements/{record_id}")
+def delete_measurement(record_id: str) -> dict:
+    """删除单个采样目录（连同图片、sample.json 一起清掉）。"""
+    if not _ID_RE.match(record_id or ""):
+        raise HTTPException(400, "非法的采样 id")
+    base = MEASUREMENTS_DIR.resolve()
+    sub = (MEASUREMENTS_DIR / record_id).resolve()
+    try:
+        sub.relative_to(base)
+    except ValueError:
+        raise HTTPException(400, "非法的采样 id")
+    if not sub.exists():
+        raise HTTPException(404, f"采样目录不存在：{record_id}")
+    if not sub.is_dir():
+        raise HTTPException(400, f"路径不是目录：{record_id}")
+    import shutil
+
+    try:
+        shutil.rmtree(sub)
+    except OSError as exc:
+        raise HTTPException(500, f"删除失败：{_describe(exc)}") from exc
+    return {"ok": True, "id": record_id}
+
+
 @app.get("/api/measurements/next-index")
 def next_index(name: str) -> dict:
     """给定名称，找当前磁盘上最大 index，返回 max+1（用作下次序号的默认值）。"""
@@ -442,6 +539,70 @@ def next_index(name: str) -> dict:
             continue
         max_index = max(max_index, idx)
     return {"name": name, "next_index": max_index + 1}
+
+
+_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}-\d{1,6}$")
+
+
+class ExportRequest(BaseModel):
+    ids: list[str]
+
+
+@app.post("/api/measurements/export-zip")
+def export_measurements_zip(req: ExportRequest = Body(...)) -> StreamingResponse:
+    """把选中的采样目录整体打包成 zip 下载。"""
+    if not req.ids:
+        raise HTTPException(400, "请至少选择一个采样")
+    if not MEASUREMENTS_DIR.exists():
+        raise HTTPException(404, "尚无采样目录")
+
+    base = MEASUREMENTS_DIR.resolve()
+    picked: list[tuple[str, Path]] = []
+    missing: list[str] = []
+    for raw in req.ids:
+        rid = (raw or "").strip()
+        if not _ID_RE.match(rid):
+            missing.append(rid or "<empty>")
+            continue
+        sub = (MEASUREMENTS_DIR / rid).resolve()
+        try:
+            sub.relative_to(base)
+        except ValueError:
+            missing.append(rid)
+            continue
+        if not sub.is_dir() or not (sub / "sample.json").exists():
+            missing.append(rid)
+            continue
+        picked.append((rid, sub))
+
+    if not picked:
+        detail = "找不到有效采样目录"
+        if missing:
+            detail += f"：{', '.join(missing[:5])}"
+        raise HTTPException(404, detail)
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for rid, sub in picked:
+            for path in sorted(sub.rglob("*")):
+                if not path.is_file():
+                    continue
+                arcname = f"{rid}/{path.relative_to(sub).as_posix()}"
+                zf.write(path, arcname)
+    buf.seek(0)
+
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = (
+        f"{picked[0][0]}.zip"
+        if len(picked) == 1
+        else f"measurements_{ts}_n{len(picked)}.zip"
+    )
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="application/zip",
+        headers=headers,
+    )
 
 
 # ---------------------------------------------------------------------------
