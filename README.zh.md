@@ -49,28 +49,29 @@ uv run dcpam
 uv run python scripts/run_analysis.py
 ```
 
-运行大恒双相机采集工具：
+采集工具已经并入 `uv run dcpam` 的测量模式，不再有独立入口。使用前请确认：
+
+- 已连接两台相机，处于 `192.168.0.x` 同一子网
+- Windows：安装大恒 Galaxy SDK（含 Python 样例目录，默认查找 `D:/Camera_Galaxy/GalaxySDK`）
+- macOS：`brew install aravis pygobject3 libffi`
+
+可选的调试脚本：
 
 ```bash
-uv run python dual_daheng_capture.py
+uv run python scripts/check_camera_env.py   # 自检 SDK / 相机可达性
+uv run python scripts/capture_once.py       # 单次抓一对帧到 pictures/
 ```
-
-使用采集工具前，请确认：
-
-- 已连接两台相机
-- macOS：已 `brew install aravis pygobject3 libffi`
-- 如需大恒 Windows SDK 版采集脚本，额外安装 Daheng Galaxy SDK 与 `gxipy`
 
 ## 仓库结构
 
 - `dcpam_cv/`：可复用的 CV 与精度分析代码
+- `dcpam_cv/camera.py`：双相机采集控制器（Windows→gxipy，其他→Aravis，接口统一）
 - `dcpam_cv/server/`：FastAPI 后端（拍照、圆心提取、JSONL 落盘）
 - `dcpam_cv/web/`：React + Three.js 前端
 - `scripts/`：可直接运行的脚本
 - `data/`：测量模式输出目录（imgs/ + measurements.jsonl，已加入 .gitignore）
-- `pictures/`：采集图片保存目录
+- `pictures/`：`scripts/capture_once.py` 的采集图像保存目录
 - `docs/`：项目说明与规范文档
-- `dual_daheng_capture.py`：实时预览与双相机成对采集入口
 
 ## 许可证
 

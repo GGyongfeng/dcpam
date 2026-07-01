@@ -6,6 +6,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import threading
 import time
 import tomllib
@@ -215,7 +216,7 @@ def camera_reconnect() -> dict:
 
 def _find_camera_interface() -> Optional[str]:
     """扫描 ifconfig 找活跃的千兆以太网接口。"""
-    if os.uname().sysname != "Darwin":
+    if sys.platform != "darwin":
         return None
     try:
         result = subprocess.run(["ifconfig"], capture_output=True, text=True, check=False)
@@ -239,7 +240,7 @@ def _reconfigure_camera_ip() -> dict:
     返回 {status, interface?, message?}：
       status = "ok" | "no_interface" | "sudo_expired" | "not_darwin" | "error"
     """
-    if os.uname().sysname != "Darwin":
+    if sys.platform != "darwin":
         return {"status": "not_darwin"}
     iface = _find_camera_interface()
     if not iface:

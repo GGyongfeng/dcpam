@@ -35,6 +35,29 @@ def _check_os() -> CheckResult:
     return CheckResult(name="操作系统", passed=True, message=info)
 
 
+def _check_camera_sdk() -> CheckResult:
+    if sys.platform == "win32":
+        return _check_gxipy()
+    return _check_aravis()
+
+
+def _check_gxipy() -> CheckResult:
+    try:
+        from .camera import _get_gxipy  # noqa: WPS433 局部导入避免循环
+        _get_gxipy()
+        return CheckResult(name="Galaxy SDK", passed=True, message="已加载 gxipy")
+    except Exception as exc:
+        return CheckResult(
+            name="Galaxy SDK",
+            passed=False,
+            message=str(exc).splitlines()[0][:80],
+            remedy=(
+                "安装大恒 Galaxy SDK（含 Python 样例）到 D:/Camera_Galaxy/GalaxySDK 或\n"
+                "C:/Program Files/Daheng Imaging/GalaxySDK，然后确认 numpy<2"
+            ),
+        )
+
+
 def _check_aravis() -> CheckResult:
     try:
         stderr_fd = sys.stderr.fileno()
@@ -99,6 +122,36 @@ def _find_ethernet_iface(ifconfig_output: str) -> str | None:
 
 
 def _check_cameras() -> CheckResult:
+    if sys.platform == "win32":
+        return _check_cameras_daheng()
+    return _check_cameras_aravis()
+
+
+def _check_cameras_daheng() -> CheckResult:
+    try:
+        from .camera import _get_gxipy
+        gx = _get_gxipy()
+        dm = gx.DeviceManager()
+        n, dev_info_list = dm.update_device_list()
+        if n >= 2:
+            ids = [info.get("sn", f"cam{i+1}") for i, info in enumerate(dev_info_list)]
+            return CheckResult(name="双相机", passed=True, message=f"{n} 台在线: {', '.join(ids)}")
+        return CheckResult(
+            name="双相机",
+            passed=False,
+            message=f"仅检测到 {n} 台",
+            remedy="检查相机电源、网线、交换机连接（要求 192.168.0.x 子网）",
+        )
+    except Exception as exc:
+        return CheckResult(
+            name="双相机",
+            passed=False,
+            message=f"无法检测 ({str(exc).splitlines()[0][:60]})",
+            remedy="先安装 Galaxy SDK 并确认 gxipy 可导入",
+        )
+
+
+def _check_cameras_aravis() -> CheckResult:
     try:
         import gi
         gi.require_version("Aravis", "0.8")
@@ -138,15 +191,16 @@ def run_checks(paths: DCPAMPaths) -> list[CheckResult]:
     """运行全部启动检测。"""
     results = [_check_os()]
 
-    aravis = _check_aravis()
-    results.append(aravis)
+    sdk = _check_camera_sdk()
+    results.append(sdk)
 
-    if aravis.passed:
+    if sdk.passed:
         results.append(_check_network())
         results.append(_check_cameras())
     else:
-        results.append(CheckResult(name="交换机 IP", passed=False, message="跳过", remedy="请先安装 Aravis"))
-        results.append(CheckResult(name="双相机", passed=False, message="跳过", remedy="请先安装 Aravis"))
+        sdk_name = "Galaxy SDK" if sys.platform == "win32" else "Aravis"
+        results.append(CheckResult(name="交换机 IP", passed=False, message="跳过", remedy=f"请先安装 {sdk_name}"))
+        results.append(CheckResult(name="双相机", passed=False, message="跳过", remedy=f"请先安装 {sdk_name}"))
 
     results.append(_check_file("config.toml", paths.config_file))
 
