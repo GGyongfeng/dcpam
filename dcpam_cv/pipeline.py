@@ -36,8 +36,8 @@ class DCPAMPipeline:
         config = load_config(paths.config_file)
         self.calib = config.calibration
         self.config = config.pipeline
-        self.device = config.device
-        self.optics = OpticalGeometry(self.calib, self.device)
+        self.geometry = config.geometry
+        self.optics = OpticalGeometry(self.calib, self.geometry)
 
     def measure(
         self,

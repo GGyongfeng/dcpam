@@ -4,9 +4,9 @@ import numpy as np
 
 from .config import (
     CalibrationConfig,
-    DeviceConfig,
     DeviceReflectionGeometryConfig,
     FrameSurfaceConfig,
+    GeometryConfig,
     PlaneConfig,
     RigidTransformConfig,
 )
@@ -39,15 +39,15 @@ class RigidTransform:
 class OpticalGeometry:
     """当前 pipeline 使用的几何对象，全部位于设备坐标系（=前取景框局部系）下。"""
 
-    def __init__(self, calibration: CalibrationConfig, device: DeviceConfig) -> None:
+    def __init__(self, calibration: CalibrationConfig, geometry: GeometryConfig) -> None:
         front_frame = calibration.frame_surfaces.front_frame_pnp
         rear_frame = calibration.frame_surfaces.rear_frame_pnp
         if front_frame is None or rear_frame is None:
             raise ValueError("配置缺少 PnP 实像面，无法构建光学几何")
         if calibration.front_camera_to_frame is None or calibration.rear_camera_to_frame is None:
             raise ValueError("配置缺少 camera_to_frame 变换，先跑 scripts/pnp/pnp_定位.py")
-        if calibration.rear_to_front is None:
-            raise ValueError("配置缺少 rear_to_front 装配变换，先跑 scripts/pnp/pnp_定位.py")
+        if geometry.rear_to_front is None:
+            raise ValueError("配置缺少 geometry.rear_to_front 装配变换")
 
         self.front_image_real = _plane_from_frame(front_frame)
         self.rear_image_real = _plane_from_frame(rear_frame)
@@ -56,12 +56,12 @@ class OpticalGeometry:
         self.front_camera_to_device = RigidTransform.from_config(calibration.front_camera_to_frame)
         # 后相机点先到后框局部系，再经装配变换 rear_to_front 并入前框系（=设备系）。
         self.rear_camera_to_frame = RigidTransform.from_config(calibration.rear_camera_to_frame)
-        self.rear_to_front = RigidTransform.from_config(calibration.rear_to_front)
+        self.rear_to_front = RigidTransform.from_config(geometry.rear_to_front)
         self.rear_camera_to_device = self.rear_to_front.compose(self.rear_camera_to_frame)
 
-        self.front_reflection = _plane_from_device(device.geometry.front_reflection)
-        self.rear_reflection = _plane_from_device(device.geometry.rear_reflection)
-        self.target_point = _probe_target(device)
+        self.front_reflection = _plane_from_device(geometry.front_reflection)
+        self.rear_reflection = _plane_from_device(geometry.rear_reflection)
+        self.target_point = _probe_target(geometry)
 
 
 def _plane_from_frame(frame: FrameSurfaceConfig) -> PlaneConfig:
@@ -84,12 +84,12 @@ def _plane_from_device(source: DeviceReflectionGeometryConfig) -> PlaneConfig:
     )
 
 
-def _probe_target(device: DeviceConfig) -> Point3D:
-    root_x, root_y, root_z = device.geometry.probe_rod.root
+def _probe_target(geometry: GeometryConfig) -> Point3D:
+    root_x, root_y, root_z = geometry.probe_rod.root
     return Point3D(
         x=root_x,
         y=root_y,
-        z=root_z - device.geometry.probe_rod.length_mm,
+        z=root_z - geometry.probe_rod.length_mm,
     )
 
 

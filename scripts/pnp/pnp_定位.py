@@ -5,7 +5,7 @@
 流程：5 圆点圆心检测（dcpam_cv.pnp.CircleCenterDetector）
       → 通用平面 PnP 求解（dcpam_cv.pnp.FramePoseEstimator）
       → 把「相机→各自取景框局部系」写回 config.toml（前后独立，不含装配尺寸）；
-        后框→前框（设备系）的 80mm 装配变换以 rear_to_front 单独维护。
+        后框→前框（设备系）的 80mm 装配变换以 geometry.rear_to_front 单独维护。
 """
 from __future__ import annotations
 
@@ -71,15 +71,8 @@ def _write_config(
     surfaces["rear_frame_pnp"] = _surface_config(estimates["rear"])
     calibration["front_camera_to_frame"] = _camera_to_frame(estimates["front"], planes["front"])
     calibration["rear_camera_to_frame"] = _camera_to_frame(estimates["rear"], planes["rear"])
-    # 后框→前框（设备系）装配变换：初值 R=单位阵、t=[80,0,0]。用 setdefault，
-    # 保证重跑标定不会覆盖将来几何自标定写入的值。
-    calibration.setdefault(
-        "rear_to_front",
-        {
-            "rotation": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
-            "translation": [80.0, 0.0, 0.0],
-        },
-    )
+    # 注意：后框→前框装配变换 geometry.rear_to_front 属设备物理测量，由人手动填写，
+    # 标定脚本不写、不动它。
     config_path.write_text(_render_toml(raw), encoding="utf-8")
 
 

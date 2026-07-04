@@ -82,15 +82,23 @@ rotation = [
 ]
 translation = [80.0, 0.0, 0.0]
 
-[device.geometry.front_reflection]
+[geometry.front_reflection]
 point = [0.0, 0.0, 23.0]
 normal = [0.7071067811865475, 0.0, 0.7071067811865475]
 
-[device.geometry.rear_reflection]
+[geometry.rear_reflection]
 point = [80.0, 0.0, 23.0]
 normal = [0.7071067811865475, 0.0, 0.7071067811865475]
 
-[device.geometry.probe_rod]
+[geometry.probe_rod]
 root = [41.0, 0.0, -132.0]
 length_mm = 586.051
+
+[geometry.rear_to_front]
+rotation = [
+    [1.0, 0.0, 0.0],
+    [0.0, 1.0, 0.0],
+    [0.0, 0.0, 1.0],
+]
+translation = [80.0, 0.0, 0.0]
 """

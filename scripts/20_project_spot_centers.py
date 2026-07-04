@@ -54,7 +54,7 @@ class SpotMeasurementProjector:
 
     def __init__(self, config: AppConfig) -> None:
         self.config = config
-        self.optics = OpticalGeometry(config.calibration, config.device)
+        self.optics = OpticalGeometry(config.calibration, config.geometry)
 
     def project_rows(self, rows: list[SpotCenterRow]) -> list[SpotMeasurementRecord]:
         return [self._project_row(row) for row in rows]

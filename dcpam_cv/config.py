@@ -90,8 +90,6 @@ class CalibrationConfig(BaseModel):
     # 相机坐标系 → 各自取景框局部系（前后独立，不含设备装配尺寸）。
     front_camera_to_frame: RigidTransformConfig | None = None
     rear_camera_to_frame: RigidTransformConfig | None = None
-    # 后取景框局部系 → 前取景框局部系（=设备系）的装配变换（含 80mm 平移与安装误差）。
-    rear_to_front: RigidTransformConfig | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -127,16 +125,14 @@ class ProbeRodGeometryConfig(BaseModel):
     length_mm: float
 
 
-class DeviceGeometryConfig(BaseModel):
-    """算法关心的设备几何。"""
+class GeometryConfig(BaseModel):
+    """算法关心的设备几何（config.toml 顶层 [geometry]）。"""
     front_reflection: DeviceReflectionGeometryConfig
     rear_reflection: DeviceReflectionGeometryConfig
     probe_rod: ProbeRodGeometryConfig
-
-
-class DeviceConfig(BaseModel):
-    """设备完整配置。"""
-    geometry: DeviceGeometryConfig
+    # 后取景框局部系 → 前取景框局部系（=设备系）的装配变换。
+    # 依赖设备物理测量（80mm 平移 + 安装误差），由人手动填写，标定脚本不写。
+    rear_to_front: RigidTransformConfig | None = None
 
 
 class AppConfig(BaseModel):
@@ -144,7 +140,7 @@ class AppConfig(BaseModel):
     camera: CameraConfig = CameraConfig()
     calibration: CalibrationConfig
     pipeline: PipelineConfig = PipelineConfig()
-    device: DeviceConfig
+    geometry: GeometryConfig
 
 
 def load_config(path: Path) -> AppConfig:
@@ -173,10 +169,10 @@ def load_pipeline_config(path: Path) -> PipelineConfig:
     return PipelineConfig(**_section(data, path, "pipeline"))
 
 
-def load_device_config(path: Path) -> DeviceConfig:
-    """从统一或旧设备 TOML 加载设备配置。"""
+def load_geometry_config(path: Path) -> GeometryConfig:
+    """从统一或旧设备 TOML 加载几何配置。"""
     data = _load_toml(path)
-    return DeviceConfig(**_section(data, path, "device"))
+    return GeometryConfig(**_section(data, path, "geometry"))
 
 
 def _load_toml(path: Path) -> dict:

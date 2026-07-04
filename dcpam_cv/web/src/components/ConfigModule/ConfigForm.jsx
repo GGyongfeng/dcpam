@@ -38,30 +38,38 @@ export function ConfigForm({ controller }) {
           onChange={(v) => patch(["pipeline", "spot_extraction", "centroid_threshold"], v)} />
       </Section>
 
-      <Section title="device.geometry">
+      <Section title="geometry（设备几何）">
         <Subsection title="front_reflection">
           <VectorField label="point" length={3}
-            value={draft.device?.geometry?.front_reflection?.point}
-            onChange={(v) => patch(["device", "geometry", "front_reflection", "point"], v)} />
+            value={draft.geometry?.front_reflection?.point}
+            onChange={(v) => patch(["geometry", "front_reflection", "point"], v)} />
           <VectorField label="normal" length={3}
-            value={draft.device?.geometry?.front_reflection?.normal}
-            onChange={(v) => patch(["device", "geometry", "front_reflection", "normal"], v)} />
+            value={draft.geometry?.front_reflection?.normal}
+            onChange={(v) => patch(["geometry", "front_reflection", "normal"], v)} />
         </Subsection>
         <Subsection title="rear_reflection">
           <VectorField label="point" length={3}
-            value={draft.device?.geometry?.rear_reflection?.point}
-            onChange={(v) => patch(["device", "geometry", "rear_reflection", "point"], v)} />
+            value={draft.geometry?.rear_reflection?.point}
+            onChange={(v) => patch(["geometry", "rear_reflection", "point"], v)} />
           <VectorField label="normal" length={3}
-            value={draft.device?.geometry?.rear_reflection?.normal}
-            onChange={(v) => patch(["device", "geometry", "rear_reflection", "normal"], v)} />
+            value={draft.geometry?.rear_reflection?.normal}
+            onChange={(v) => patch(["geometry", "rear_reflection", "normal"], v)} />
         </Subsection>
         <Subsection title="probe_rod">
           <VectorField label="root" length={3}
-            value={draft.device?.geometry?.probe_rod?.root}
-            onChange={(v) => patch(["device", "geometry", "probe_rod", "root"], v)} />
+            value={draft.geometry?.probe_rod?.root}
+            onChange={(v) => patch(["geometry", "probe_rod", "root"], v)} />
           <Field label="length_mm" type="float"
-            value={draft.device?.geometry?.probe_rod?.length_mm}
-            onChange={(v) => patch(["device", "geometry", "probe_rod", "length_mm"], v)} />
+            value={draft.geometry?.probe_rod?.length_mm}
+            onChange={(v) => patch(["geometry", "probe_rod", "length_mm"], v)} />
+        </Subsection>
+        <Subsection title="rear_to_front（后框→前框装配变换）">
+          <MatrixField label="rotation" rows={3} cols={3}
+            value={draft.geometry?.rear_to_front?.rotation}
+            onChange={(v) => patch(["geometry", "rear_to_front", "rotation"], v)} />
+          <VectorField label="translation" length={3}
+            value={draft.geometry?.rear_to_front?.translation}
+            onChange={(v) => patch(["geometry", "rear_to_front", "translation"], v)} />
         </Subsection>
       </Section>
 
@@ -101,7 +109,7 @@ export function ConfigForm({ controller }) {
               onChange={(v) => patch(["calibration", "frame_surfaces", surface, "d"], v)} />
           </Subsection>
         ))}
-        {["front_camera_to_frame", "rear_camera_to_frame", "rear_to_front"].map((key) => (
+        {["front_camera_to_frame", "rear_camera_to_frame"].map((key) => (
           <Subsection title={key} key={key}>
             <MatrixField label="rotation" rows={3} cols={3}
               value={draft.calibration?.[key]?.rotation}

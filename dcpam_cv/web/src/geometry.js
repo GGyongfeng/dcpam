@@ -19,16 +19,16 @@ export const COLORS = {
 
 export function buildGeometry(config, algorithm = {}) {
   const calibration = config.calibration || config;
-  const device = makeDeviceGeometry(config.device?.geometry || {});
+  const device = makeDeviceGeometry(config.geometry || {});
 
   const frontCameraToDevice = makeCameraToDeviceTransform(calibration.front_camera_to_frame);
-  // 后相机：先 camera→后框局部系，再经 rear_to_front 装配变换并入前框系（=设备系）。
+  // 后相机：先 camera→后框局部系，再经 geometry.rear_to_front 装配变换并入前框系（=设备系）。
   const rearCameraToDevice = makeCameraToDeviceTransform(
-    composeRigid(calibration.rear_to_front, calibration.rear_camera_to_frame),
+    composeRigid(config.geometry?.rear_to_front, calibration.rear_camera_to_frame),
   );
   if (!frontCameraToDevice || !rearCameraToDevice) {
     throw new Error(
-      "config.toml 缺少 front_camera_to_frame / rear_camera_to_frame / rear_to_front，无法构建相机到设备系的变换",
+      "config.toml 缺少 front_camera_to_frame / rear_camera_to_frame / geometry.rear_to_front，无法构建相机到设备系的变换",
     );
   }
 

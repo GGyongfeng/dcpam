@@ -46,22 +46,24 @@ rotation = [
 ]
 translation = [0.19121299084341828, 0.079032651678278, -38.20092437429275]
 
-[calibration.rear_to_front]
+[geometry.front_reflection]
+point = [0.0, 0.0, 23.0]
+normal = [0.7071067811865475, 0.0, 0.7071067811865475]
+
+[geometry.rear_reflection]
+point = [80.0, 0.0, 23.0]
+normal = [0.7071067811865475, 0.0, 0.7071067811865475]
+
+[geometry.probe_rod]
+root = [41.0, 0.0, -132.0]
+length_mm = 586.051
+
+# 后取景框局部系 → 前取景框局部系（=设备系）的装配变换。
+# 依赖设备物理测量（80mm 平移 + 安装误差），手动填写；标定脚本不写。
+[geometry.rear_to_front]
 rotation = [
     [1.0, 0.0, 0.0],
     [0.0, 1.0, 0.0],
     [0.0, 0.0, 1.0],
 ]
 translation = [80.0, 0.0, 0.0]
-
-[device.geometry.front_reflection]
-point = [0.0, 0.0, 23.0]
-normal = [0.7071067811865475, 0.0, 0.7071067811865475]
-
-[device.geometry.rear_reflection]
-point = [80.0, 0.0, 23.0]
-normal = [0.7071067811865475, 0.0, 0.7071067811865475]
-
-[device.geometry.probe_rod]
-root = [41.0, 0.0, -132.0]
-length_mm = 586.051
