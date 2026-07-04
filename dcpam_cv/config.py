@@ -75,8 +75,8 @@ class FrameSurfaceCalibrationConfig(BaseModel):
     rear_frame_pnp: FrameSurfaceConfig | None = None
 
 
-class CameraToDeviceConfig(BaseModel):
-    """相机坐标系 → 设备坐标系的刚体变换：p_device = R @ p_camera + t。"""
+class RigidTransformConfig(BaseModel):
+    """通用刚体变换：p_out = R @ p_in + t。rotation 3x3 按行，translation 3 维。"""
     rotation: list[tuple[float, float, float]]  # 3x3, 按行
     translation: tuple[float, float, float]
 
@@ -87,8 +87,11 @@ class CalibrationConfig(BaseModel):
     rear_camera: CameraIntrinsics
     planes: PlaneCalibrationConfig = PlaneCalibrationConfig()
     frame_surfaces: FrameSurfaceCalibrationConfig = FrameSurfaceCalibrationConfig()
-    front_camera_to_device: CameraToDeviceConfig | None = None
-    rear_camera_to_device: CameraToDeviceConfig | None = None
+    # 相机坐标系 → 各自取景框局部系（前后独立，不含设备装配尺寸）。
+    front_camera_to_frame: RigidTransformConfig | None = None
+    rear_camera_to_frame: RigidTransformConfig | None = None
+    # 后取景框局部系 → 前取景框局部系（=设备系）的装配变换（含 80mm 平移与安装误差）。
+    rear_to_front: RigidTransformConfig | None = None
 
 
 # ---------------------------------------------------------------------------

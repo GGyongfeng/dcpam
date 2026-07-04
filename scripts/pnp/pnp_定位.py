@@ -4,7 +4,8 @@
       不同光照重复拍摄的标定图。
 流程：5 圆点圆心检测（dcpam_cv.pnp.CircleCenterDetector）
       → 通用平面 PnP 求解（dcpam_cv.pnp.FramePoseEstimator）
-      → 把相机系下成像面 + camera_to_device 刚体变换写回 config.toml。
+      → 把「相机→各自取景框局部系」写回 config.toml（前后独立，不含装配尺寸）；
+        后框→前框（设备系）的 80mm 装配变换以 rear_to_front 单独维护。
 """
 from __future__ import annotations
 
@@ -62,11 +63,23 @@ def _write_config(
         raw = tomllib.load(file)
     calibration = raw.setdefault("calibration", {})
     calibration.pop("frames", None)
+    # 清除解耦前的旧键（相机→设备系），避免 round-trip 残留。
+    calibration.pop("front_camera_to_device", None)
+    calibration.pop("rear_camera_to_device", None)
     surfaces = calibration.setdefault("frame_surfaces", {})
     surfaces["front_frame_pnp"] = _surface_config(estimates["front"])
     surfaces["rear_frame_pnp"] = _surface_config(estimates["rear"])
-    calibration["front_camera_to_device"] = _camera_to_device(estimates["front"], planes["front"])
-    calibration["rear_camera_to_device"] = _camera_to_device(estimates["rear"], planes["rear"])
+    calibration["front_camera_to_frame"] = _camera_to_frame(estimates["front"], planes["front"])
+    calibration["rear_camera_to_frame"] = _camera_to_frame(estimates["rear"], planes["rear"])
+    # 后框→前框（设备系）装配变换：初值 R=单位阵、t=[80,0,0]。用 setdefault，
+    # 保证重跑标定不会覆盖将来几何自标定写入的值。
+    calibration.setdefault(
+        "rear_to_front",
+        {
+            "rotation": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+            "translation": [80.0, 0.0, 0.0],
+        },
+    )
     config_path.write_text(_render_toml(raw), encoding="utf-8")
 
 
@@ -82,24 +95,28 @@ def _surface_config(estimate: FramePoseEstimate) -> dict:
     }
 
 
-def _camera_to_device(estimate: FramePoseEstimate, device: DeviceFrameConvention) -> dict:
-    """把 PnP 给出的 frame→camera 姿态和设备端约定拼成 camera→device 刚体变换。"""
+def _camera_to_frame(estimate: FramePoseEstimate, frame: DeviceFrameConvention) -> dict:
+    """把 PnP 给出的 frame→camera 姿态拼成 camera→取景框局部系 刚体变换。
+
+    frame.point 为该框局部系原点（前后都取框中心 [0,0,0]）；normal/x_axis 定义
+    局部系朝向。装配尺寸（后框相对前框的 80mm 等）不在此处，已解耦到 rear_to_front。
+    """
     R_pnp = estimate.pose.rotation_matrix()
     t_pnp = estimate.pose.translation_vector()
 
-    z_dev = _unit(np.array(device.normal, dtype=np.float64))
-    x_dev = _unit(np.array(device.x_axis, dtype=np.float64))
+    z_dev = _unit(np.array(frame.normal, dtype=np.float64))
+    x_dev = _unit(np.array(frame.x_axis, dtype=np.float64))
     x_dev = _unit(x_dev - (x_dev @ z_dev) * z_dev)
     y_dev = np.cross(z_dev, x_dev)
     B_dev = np.column_stack([x_dev, y_dev, z_dev])
 
-    p_dev_center = np.array(device.point, dtype=np.float64)
-    R_cam_to_dev = (R_pnp @ B_dev.T).T
-    t_cam_to_dev = p_dev_center - R_cam_to_dev @ t_pnp
+    p_frame_center = np.array(frame.point, dtype=np.float64)
+    R_cam_to_frame = (R_pnp @ B_dev.T).T
+    t_cam_to_frame = p_frame_center - R_cam_to_frame @ t_pnp
 
     return {
-        "rotation": [_vector(row) for row in R_cam_to_dev],
-        "translation": _vector(t_cam_to_dev),
+        "rotation": [_vector(row) for row in R_cam_to_frame],
+        "translation": _vector(t_cam_to_frame),
     }
 
 

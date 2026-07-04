@@ -101,7 +101,7 @@ export function ConfigForm({ controller }) {
               onChange={(v) => patch(["calibration", "frame_surfaces", surface, "d"], v)} />
           </Subsection>
         ))}
-        {["front_camera_to_device", "rear_camera_to_device"].map((key) => (
+        {["front_camera_to_frame", "rear_camera_to_frame", "rear_to_front"].map((key) => (
           <Subsection title={key} key={key}>
             <MatrixField label="rotation" rows={3} cols={3}
               value={draft.calibration?.[key]?.rotation}

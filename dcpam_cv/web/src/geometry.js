@@ -21,11 +21,14 @@ export function buildGeometry(config, algorithm = {}) {
   const calibration = config.calibration || config;
   const device = makeDeviceGeometry(config.device?.geometry || {});
 
-  const frontCameraToDevice = makeCameraToDeviceTransform(calibration.front_camera_to_device);
-  const rearCameraToDevice = makeCameraToDeviceTransform(calibration.rear_camera_to_device);
+  const frontCameraToDevice = makeCameraToDeviceTransform(calibration.front_camera_to_frame);
+  // 后相机：先 camera→后框局部系，再经 rear_to_front 装配变换并入前框系（=设备系）。
+  const rearCameraToDevice = makeCameraToDeviceTransform(
+    composeRigid(calibration.rear_to_front, calibration.rear_camera_to_frame),
+  );
   if (!frontCameraToDevice || !rearCameraToDevice) {
     throw new Error(
-      "config.toml 缺少 front_camera_to_device / rear_camera_to_device，无法构建相机到设备系的变换",
+      "config.toml 缺少 front_camera_to_frame / rear_camera_to_frame / rear_to_front，无法构建相机到设备系的变换",
     );
   }
 
@@ -106,6 +109,20 @@ function makeCoordinateFrames(deviceAlignment, cameras, frames) {
       length: 9,
     } : null,
   ].filter(Boolean);
+}
+
+function composeRigid(outer, inner) {
+  // 返回 outer ∘ inner 的 {rotation, translation}：先施加 inner，再施加 outer。
+  if (!outer || !inner) return null;
+  const Ro = (outer.rotation || []).map((row) => row.map(Number));
+  const to = (outer.translation || [0, 0, 0]).map(Number);
+  const Ri = (inner.rotation || []).map((row) => row.map(Number));
+  const ti = (inner.translation || [0, 0, 0]).map(Number);
+  if (Ro.length !== 3 || Ri.length !== 3) return null;
+  return {
+    rotation: matrixMul3(Ro, Ri),
+    translation: add3(matrixVectorMul(Ro, ti), to),
+  };
 }
 
 function makeCameraToDeviceTransform(config) {
