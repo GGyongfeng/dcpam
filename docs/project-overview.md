@@ -16,8 +16,8 @@
 DCPAM 项目的目标是**用激光基准线替代钢丝**，通过双相机系统重建激光轴线的三维空间位置，计算任意目标点到激光轴线的垂直距离，从而实现非接触式高精度轴线对中测量。
 
 核心算法脉络可参考 [`dcpam-core-algorithm.md`](dcpam-core-algorithm.md)；
-基于当前标定数据的坐标统一方案可参考
-[`calibrated-coordinate-unification.md`](calibrated-coordinate-unification.md)。
+当前基于 5 圆点 PnP 的坐标统一方案可参考
+[`design/pnp-5circles-experiment-log.md`](design/pnp-5circles-experiment-log.md)。
 
 ### 精度要求
 
@@ -30,14 +30,11 @@ DCPAM 项目的目标是**用激光基准线替代钢丝**，通过双相机系�
 
 系统内所有物理长度统一使用 **mm（毫米）** 作为单位，包括：
 
-- 标定参数（calibration.toml）中的平移向量、基线长度、几何尺寸
-- 管线参数（pipeline.toml）中的杆长、安装位置
+- 标定参数（`config.toml` 的 `[calibration]`）中的平移向量、位姿平移、几何尺寸
+- 设备几何参数（`config.toml` 的 `[geometry]`）中的杆长、安装位置、装配变换
 - 最终输出的测量距离 H
 
 相机内参（焦距、主点）单位为 **px（像素）**，畸变系数和旋转矩阵无量纲。
-
-COLMAP 标定输出的原始尺度约为 cm，
-写入 calibration.toml 时需乘以 10 转换为 mm。
 
 
 ## 2. DCPAM 模型总公式
@@ -59,22 +56,23 @@ $$h_t = \mathrm{DCPAM}(I_{C_1}, I_{C_2}, l_T)$$
 
 | 坐标系 | 说明 |
 |--------|------|
-| C1 | 相机 1 坐标系，原点在 C1 光心，Z 轴沿光轴方向，右手系 |
-| C2 | 相机 2 坐标系，原点在 C2 光心，Z 轴沿光轴方向，右手系 |
-| D（设备坐标系） | 定义为 D ≡ C1，即设备坐标系与前相机坐标系重合 |
+| C1 | 前相机坐标系，原点在前相机光心，Z 轴沿光轴方向，右手系 |
+| C2 | 后相机坐标系，原点在后相机光心，Z 轴沿光轴方向，右手系 |
+| D（设备坐标系） | 定义为**前取景框局部系**：原点=前框中心，+X 前相机→后相机，+Y 画面上→下，+Z 远离相机，右手系 |
 
-光心在各自坐标系中的位置为 $(0, 0, 0)^T$（这是坐标系定义决定的，与镜头参数无关）。
+前、后成像面的实像点最终都统一到设备坐标系 D 下完成镜像、激光线构造与距离计算。
+设备系与相机系的关系由 5 圆点 PnP 标定给出（见第 5 节），不再假设 D ≡ C1。
 
 ### 3.2 关键坐标点定义
 
 | 符号 | 含义 | 所属坐标系 |
 |------|------|-----------|
 | $P^f_{real}$ | 前相机接收屏上的激光实像点 | C1 |
-| $P^f_{virtual}$ | 前虚像面的激光虚像点 | C1 |
+| $P^f_{virtual}$ | 前虚像面的激光虚像点（设备系镜像后） | D |
 | $P^{b\text{-}C2}_{real}$ | 后相机接收屏上的激光实像点 | C2 |
-| $P^{b\text{-}C2}_{virtual}$ | 后虚像面的激光虚像点 | C2 |
-| $P^b_{virtual}$ | 后虚像点转换到 C1 坐标系后的坐标 | C1 |
-| $P_T$ | 目标点 | C1 |
+| $P^b_{real}$ | 后实像点并入设备系后的坐标 | D |
+| $P^b_{virtual}$ | 后虚像面的激光虚像点（设备系镜像后） | D |
+| $P_T$ | 目标点（探测杆靶点） | D |
 
 ### 3.3 提取光斑圆心像素坐标
 
@@ -84,7 +82,7 @@ $$h_t = \mathrm{DCPAM}(I_{C_1}, I_{C_2}, l_T)$$
 
 $$\mathbf{p}_1 = \begin{bmatrix} u_1 \\ v_1 \\ 1 \end{bmatrix}, \quad \mathbf{p}_2 = \begin{bmatrix} u_2 \\ v_2 \\ 1 \end{bmatrix}$$
 
-光斑提取算法（代码 `center.py` 中的实现）：
+光斑提取算法（代码 `dcpam_cv/steps/spot_extraction.py` 中的实现）：
 - 质心法（centroid method）：亮斑区域的质量中心
 - 高斯拟合（Gaussian fit）：二维高斯函数拟合
 - 改进圆拟合（improved circle fit）：高斯模糊→质心粗定位→Sobel 梯度→Canny 边缘→梯度方向投票→高斯精修
@@ -100,42 +98,38 @@ $$\lambda = -\frac{d}{n^T r}, \quad P_{real} = \lambda r$$
 
 **依赖项：** 相机内参；前、后成像面在各自相机坐标系下的平面方程。
 
-### 3.5 实像点 → 虚像点变换
+### 3.5 实像点搬入设备坐标系
 
-为了重建展开后的光路，需要将接收屏上的实像点关于对应反射面做镜像。
+上一步得到的实像点位于各自相机坐标系，需要统一到设备坐标系 D。
+变换关系由 5 圆点 PnP 标定给出（见第 5 节）：
+
+前相机点用 `calibration.front_camera_to_frame` 直接搬入前取景框局部系（即设备系 D）：
+
+$$P^f_{real} = T_{C1 \to frame_f}\, P^f_{C1}$$
+
+后相机点先用 `calibration.rear_camera_to_frame` 搬入后取景框局部系，
+再经 `geometry.rear_to_front` 装配变换（含约 80 mm 平移）并入设备系：
+
+$$P^b_{real} = T_{frame_b \to front}\, T_{C2 \to frame_b}\, P^{b\text{-}C2}_{real}$$
+
+**依赖项：** `front_camera_to_frame`、`rear_camera_to_frame`、`geometry.rear_to_front`。
+
+### 3.6 设备系镜像：实像点 → 虚像点
+
+在设备坐标系下，把两个实像点分别关于对应反射面做镜像，重建展开后的光路。
 若反射面方程为 $n^T x + d = 0$，则点 $x$ 的镜像点为：
 
 $$x_{mirror} = x - 2(n^T x + d)n$$
 
 于是：
 
-$$P^f_{virtual} = mirror(P^f_{real}, M_f)$$
+$$P^f_{virtual} = mirror(P^f_{real}, M_f), \quad P^b_{virtual} = mirror(P^b_{real}, M_b)$$
 
-$$P^{b\text{-}C2}_{virtual} = mirror(P^{b\text{-}C2}_{real}, M_b)$$
-
-**依赖项：** 前、后反射面在各自相机坐标系下的平面方程。
-
-### 3.6 C2 坐标系 → C1 坐标系
-
-将 C2 坐标系中的虚像点转换到 C1 坐标系：
-
-$$P^b_{virtual} = T_{C2 \to C1} \cdot P^{b\text{-}C2}_{virtual}$$
-
-其中：
-
-$$T_{C2 \to C1} = E_1 \cdot E_2^{-1}$$
-
-$E_1$、$E_2$ 分别为两个相机基于同一世界坐标系 W 标定的外参矩阵。
-
-等价地，若已知相对位姿 $R_{21}$, $t_{21}$（C1→C2），则：
-
-$$R_{12} = R_{21}^T, \quad t_{12} = -R_{21}^T t_{21}$$
-
-**依赖项：** 双相机外参标定
+**依赖项：** `geometry.front_reflection`、`geometry.rear_reflection`（设备坐标系下的反射面）。
 
 ### 3.7 计算目标点到激光线的距离
 
-在 C1 坐标系中，由 $P^f_{virtual}$、$P^b_{virtual}$、$P_T$ 的空间坐标，用叉积公式求解 $P_T$ 到直线 $P^b_{virtual}P^f_{virtual}$ 的距离：
+在设备坐标系中，由 $P^f_{virtual}$、$P^b_{virtual}$、$P_T$ 的空间坐标，用叉积公式求解 $P_T$ 到直线 $P^b_{virtual}P^f_{virtual}$ 的距离：
 
 $$H = \frac{|\vec{L} \times \vec{w}|}{|\vec{L}|}$$
 
@@ -204,19 +198,23 @@ $$K = \begin{bmatrix} f_x & 0 & c_x \\ 0 & f_y & c_y \\ 0 & 0 & 1 \end{bmatrix}$
 | 畸变 $k_1, k_2$ | -0.2267, 0.0922 | -0.2419, 0.1047 |
 | 畸变 $p_1, p_2$ | -0.0041, -0.0010 | 0.0003, 0.0002 |
 
-### 5.2 外参标定
+### 5.2 相机—成像面标定（5 圆点 PnP）
 
-双相机标定流程（使用 COLMAP）：
-1. 双相机同步拍摄图像对
-2. 所有图像同时进行特征提取与匹配
-3. 运行 SfM 建图（含去畸变）
-4. 导出内参（cameras.txt）和外参（images.txt）
-5. 计算相机间相对位姿（预期基线约 7.5-8.0 cm）
+当前不再用双相机外参统一坐标。每个成像面贴 5 个黑圆点，其在成像面局部系下的坐标由影像仪测得
+（`pnp.toml` 的 object points）。标定时用 SimpleBlobDetector 从相机图提取 5 个圆心，与 object
+points 做 PnP，解出「相机→取景框局部系」的位姿，写入 `config.toml` 的
+`calibration.front_camera_to_frame` / `rear_camera_to_frame`；同时得到相机系下的实像面平面，
+写入 `calibration.frame_surfaces`。前后模块间约 80 mm 的装配变换由人工测量填入
+`geometry.rear_to_front`。标定入口为 `scripts/pnp/pnp_定位.py`。
 
-### 5.3 光学平面标定
+历史上曾用 COLMAP 标定双相机外参（C2→C1）做坐标统一，因两相机无法对同一成像面合焦、
+矩阵可靠性不足，已从主链路移除，`config.toml` 也不再保存。
 
-算法直接使用四个光学平面的几何表示：前成像面、后成像面、前反射面、后反射面。
-每个平面以 `point`、`normal`、`d` 存入 `calibration.toml`，满足：
+### 5.3 光学平面表示
+
+算法使用两类平面：相机成像面（由 5 圆点 PnP 得到，存入 `config.toml` 的
+`calibration.frame_surfaces`，位于各自相机系）与设备反射面（存入
+`geometry.{front,rear}_reflection`，位于设备系）。每个平面以 `point`、`normal`、`d` 表示，满足：
 
 $$normal^T x + d = 0$$
 
@@ -244,50 +242,47 @@ $$normal^T x + d = 0$$
 
 ```
 dcpam/
-├── dcpam_cv/                     # 核心 CV 和精度分析代码
-│   ├── __init__.py
-│   ├── center.py                 # 光斑圆心提取（质心法/高斯拟合/改进圆拟合）
-│   └── precision/
-│       ├── __init__.py
-│       ├── precision_analysis.py # 核心数学模型（点线距离、误差传播、Monte Carlo、灵敏度分析）
-│       └── visualization.py     # 3D 模型、分布直方图、灵敏度图表可视化
+├── dcpam_cv/                     # 核心测量代码
+│   ├── config.py                # Pydantic 配置模型 + config.toml 加载
+│   ├── defaults.py              # 首次运行写入默认 config.toml
+│   ├── path.py                  # 项目根目录 / config.toml / captures 路径
+│   ├── types.py                 # Point2D / Point3D / SpotPair / LaserAxis / MeasurementResult
+│   ├── camera.py                # DualCamera 双相机采集（Aravis / gxipy 后端）
+│   ├── optical_geometry.py      # OpticalGeometry：设备系实像面/反射面/靶点 + 刚体变换
+│   ├── pipeline.py              # DCPAMPipeline：设备坐标系 5 步测量流程
+│   ├── steps/                   # extract_spots / back_project / mirror_transform / point_to_line_distance
+│   ├── pnp/                     # 5 圆点 PnP 标定：circles / pose / device_convention
+│   ├── cli.py, startup.py       # CLI 入口与健康检查
+│   ├── server/                  # FastAPI 后端
+│   └── web/                     # React/Three.js 3D 查看器
 ├── scripts/
-│   ├── run_analysis.py          # 交互式精度分析脚本（rich 终端 UI）
-│   ├── check_camera_env.py      # SDK / 相机可达性自检
-│   └── capture_once.py          # 单次双相机抓帧调试脚本
+│   ├── 00_extract_dataset_centers.py  # 批量提取数据集圆心 → CSV
+│   ├── 20_project_spot_centers.py     # 复用 OpticalGeometry 跑全流程 → CSV
+│   ├── 30_mirror_sensitivity_mc.py    # 反射面扰动 Monte Carlo 灵敏度
+│   ├── pnp/pnp_定位.py                # 5 圆点 PnP 标定入口
+│   ├── pnp/pnp_影像仪转换.py          # 影像仪测量 → object points
+│   ├── check_camera_env.py            # SDK / 相机可达性自检
+│   └── capture_once.py                # 单次双相机抓帧调试
 ├── papers/                      # IEEE 论文（按章节拆分的 LaTeX）
-│   ├── dcpam.tex                # 主文件
-│   ├── IEEEtran.cls
-│   └── chapters/                # 各章节 tex 文件
 ├── docs/                        # 项目文档
-├── pictures/                    # 采集图像保存目录
-└── reference/                   # 相机标定文件和模板（不纳入版本管理）
+├── dataset/                     # 采集图像与中间 CSV
+├── pnp.toml                     # PnP 标定用 object points（5 圆点局部坐标）
+└── config.toml                  # 唯一配置入口
 ```
 
 ### 核心类和方法
 
-**`PrecisionAnalyzer`**（`precision_analysis.py`）：
-- `point_to_line_distance()`：三维点到直线距离（叉积法）
-- `compute_h()`：参数化的距离计算
-- `compute_partial_derivatives()`：数值偏导数
-- `analytical_error_propagation()`：线性误差传播
-- `monte_carlo_simulation()`：Monte Carlo 随机验证（默认 10000 次）
-- `sensitivity_analysis()`：单参数扰动灵敏度分析
+**`DCPAMPipeline`**（`dcpam_cv/pipeline.py`）：设备坐标系 5 步测量流程——光斑提取、反投影到相机系实像面、实像点搬入设备系、设备系镜像、点线距离计算。
+
+**`OpticalGeometry`**（`dcpam_cv/optical_geometry.py`）：
+- 从配置构建设备系下的实像面、反射面、探测杆靶点
+- `front_camera_to_device`：等于 `calibration.front_camera_to_frame`（前框系=设备系）
+- `rear_camera_to_device`：等于 `geometry.rear_to_front ∘ calibration.rear_camera_to_frame`
 
 **`DualCamera`**（`dcpam_cv/camera.py`）：
-- 门面类：按 `sys.platform` 派发 Aravis 或 gxipy 后端
+- 门面类：按 `sys.platform` 派发 gxipy 或 Aravis 后端
 - `open()` / `close()` / `capture()` / `save()`：统一接口
 - Windows 走大恒 Galaxy SDK（gxipy），其他平台走 Aravis GigE Vision
-
-### 默认分析参数
-
-- 目标点：$(0, 0, -200)$ cm
-- 前屏偏移：$(y_f, z_f) = (0.5, 0.5)$ cm
-- 后屏偏移：$(y_b, z_b) = (-0.5, -0.5)$ cm
-- 前屏 x 坐标：$X_F = +5.0$ cm
-- 后屏 x 坐标：$X_B = -5.0$ cm
-- 误差范围：1 μm
-- Monte Carlo 采样数：10000
 
 
 ## 10. 依赖

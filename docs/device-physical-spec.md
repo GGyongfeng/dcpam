@@ -32,7 +32,7 @@
 
 ## 2. 算法实像面（Z = 0）的定义
 
-算法配置 `config.toml` 中 `device.geometry.front_frame.point = [0, 0, 0]` 与 `rear_frame.point = [80, 0, 0]` 定义的"设备实像面"，**位于上面 5 mm 叠层的中间**，等效划分如下：
+算法把每个成像面局部坐标系的原点（框中心、Z = 0 面）作为该模块的"设备实像面"，它**位于上面 5 mm 叠层的中间**。设备坐标系原点取前取景框中心，后取景框中心相对前框约 `[80, 0, 0]`——这 80 mm 装配平移由 `config.toml` 的 `geometry.rear_to_front` 装配变换给出（`pnp.toml` 的 `front_frame`/`rear_frame` 只保存 5 个圆点的 `points`，不再含框的 point/normal/x_axis）。等效划分如下：
 
 ```
 ┌─────── 取景框 2 mm ────────┐
@@ -57,7 +57,7 @@
 
 - **物理厚度**：约 1.05 mm（关节臂实测 1.04~1.06 mm）
 - **与承接屏夹角**：45°（关节臂实测 45.22°）
-- **算法引用面**：当前 `config.toml` 中 `device.geometry.{front,rear}_reflection` 描述的是反射镜**前表面**（靠承接屏一侧）
+- **算法引用面**：当前 `config.toml` 中 `geometry.{front,rear}_reflection` 描述的是反射镜**前表面**（靠承接屏一侧）
 
 反射镜两面严格平行（实测 < 0.06°），算法用单面近似（忽略 1 mm 镜片厚度产生的折射偏置）。
 
@@ -81,7 +81,7 @@
 - **杆长**：109 mm（短测杆，归档 L109 系列）；当前在用长测杆 L600
 - **靶点位置（设备系）**：`root + [0, 0, −length]`，靶点在 Z 负向
 
-`config.toml` 中 `device.geometry.probe_rod` 段维护这两个参数。
+`config.toml` 中 `geometry.probe_rod` 段维护这两个参数。
 
 
 ## 6. 测量约定

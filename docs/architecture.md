@@ -16,11 +16,12 @@ dcpam/
 │   ├── camera.py                # DualCamera 大恒相机采集
 │   ├── optical_geometry.py      # OpticalGeometry：装配实像面 / 反射面 / 靶点
 │   ├── pipeline.py              # DCPAMPipeline：5 步设备坐标系测量流程
-│   ├── steps/                   # back_project / mirror_transform / point_to_line_distance / extract_spots / FramePoseEstimator
+│   ├── steps/                   # back_project / mirror_transform / point_to_line_distance / extract_spots
+│   ├── pnp/                     # 5 圆点 PnP 标定：circles 圆心检测 / pose 通用 PnP / device_convention
 │   ├── cli.py                   # dcpam CLI 入口
 │   ├── startup.py               # 健康检查
-│   ├── web/                     # React/Three.js 3D 查看器
-│   └── precision/               # 误差传播与可视化
+│   ├── server/                  # FastAPI 后端
+│   └── web/                     # React/Three.js 3D 查看器
 ├── scripts/                     # 标定与离线处理脚本
 └── config.toml                  # 唯一配置入口
 ```
@@ -37,10 +38,11 @@ front.png + rear.png
 extract_spots            # 圆心提取
         │
         ▼
-back_project (×2)        # 反投影到各自取景框 PnP 实像面，得到相机系下的实像点
+back_project (×2)        # 反投影到各自成像面 PnP 实像面，得到相机系下的实像点
         │
         ▼
-camera_to_device (×2)    # 用取景框 PnP 与设备实像面的对齐关系搬入设备坐标系
+camera_to_device (×2)    # 前点：相机系→前取景框局部系(=设备系)；
+                         # 后点：相机系→后取景框局部系，再经 rear_to_front 并入设备系
         │
         ▼
 mirror_transform (×2)    # 设备系下分别用前/后反射面镜像得到虚像点
@@ -66,24 +68,25 @@ MeasurementResult
 
 ## 3. 配置布局
 
-`config.toml` 包含四块顶层 section：
+`config.toml` 包含三块顶层 section：
 
 ```toml
 [pipeline.spot_extraction]      # 光斑提取参数
 [calibration.front_camera]      # 前相机内参（OpenCV 模型）
 [calibration.rear_camera]       # 后相机内参
-[calibration.frame_surfaces.front_frame_pnp]  # 前取景框 PnP 位姿
-[calibration.frame_surfaces.rear_frame_pnp]   # 后取景框 PnP 位姿
-[device.geometry.view_frame]    # 取景框透光矩形尺寸
-[device.geometry.front_frame]   # 设备坐标系下的前实像面
-[device.geometry.rear_frame]    # 设备坐标系下的后实像面
-[device.geometry.front_reflection]  # 设备坐标系下的前反射面
-[device.geometry.rear_reflection]   # 设备坐标系下的后反射面
-[device.geometry.probe_rod]     # 设备坐标系下的探测杆 root + length
+[calibration.frame_surfaces.front_frame_pnp]  # 前成像面 PnP 位姿（前相机系下）
+[calibration.frame_surfaces.rear_frame_pnp]   # 后成像面 PnP 位姿（后相机系下）
+[calibration.front_camera_to_frame]  # 前相机系 → 前取景框局部系（=设备系）
+[calibration.rear_camera_to_frame]   # 后相机系 → 后取景框局部系
+[geometry.front_reflection]     # 设备坐标系下的前反射面
+[geometry.rear_reflection]      # 设备坐标系下的后反射面
+[geometry.probe_rod]            # 设备坐标系下的探测杆 root + length
+[geometry.rear_to_front]        # 后取景框局部系 → 前取景框局部系(=设备系) 的装配变换
 ```
 
 历史上还存在 `[calibration.transform]`（C2 相对 C1 外参）与 `[calibration.planes]`
-（COLMAP 平面），均已废弃。新链路只依赖 `frame_surfaces` 与 `device.geometry`。
+（COLMAP 平面），均已废弃。新链路只依赖 `frame_surfaces`、`camera_to_frame` 与
+顶层 `geometry`。
 
 
 ## 4. 相关文档
@@ -91,6 +94,5 @@ MeasurementResult
 - `docs/dcpam-core-algorithm.md` — 算法模型脉络与公式
 - `docs/calibration-toml-geometry.md` — `config.toml` 几何字段约定
 - `docs/camera-plane-constraint-model.md` — C1/C2/P1/P2 约束关系
-- `docs/design/frame-pose-pnp.md` — 取景框 PnP 标定流程
-- `docs/design/frame-center-localization.md` — 取景框中心定位（PnP 上游）
+- `docs/design/pnp-5circles-experiment-log.md` — 5 圆点 PnP 标定实验记录
 - `docs/pipeline-comparison-report.html` — 旧外参法 vs 设备坐标系法对比报告（历史归档）
