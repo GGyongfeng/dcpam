@@ -1,0 +1,22 @@
+# 几何自标定输出（exp/geometry-selfcal/geometry_selfcal.py）。
+# 请人工核对合理性后，手动合入 config.toml 的 [geometry]。
+
+[geometry.front_reflection]
+point = [0.023121, -0.017426, 23.052786]
+normal = [0.706770, -0.000124, 0.707443]
+
+[geometry.rear_reflection]
+point = [79.934717, -0.019208, 22.934868]
+normal = [0.707424, -0.000075, 0.706789]
+
+[geometry.probe_rod]
+root = [41.041937, -0.000073, -131.991889]
+length_mm = 586.042630
+
+[geometry.rear_to_front]
+rotation = [
+    [0.9999999875, -0.0001580283, 0.0000043985],
+    [0.0001580284, 0.9999999872, -0.0000267540],
+    [-0.0000043942, 0.0000267547, 0.9999999996],
+]
+translation = [80.035982, 0.000092, 0.000192]
