@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 
-import { MainPanelSwitcher, ModeSwitcher } from "../components/Switchers.jsx";
+import { MainPanelSwitcher, ModeSwitcher, PreviewSettings } from "../components/Switchers.jsx";
 import { SettingsModal } from "../components/SettingsModal.jsx";
 import {
   PanelResizer,
@@ -89,6 +89,7 @@ export function AppShell({
         <SettingsModal onClose={() => setSettingsOpen(false)}>
           <ModeSwitcher mode={mode} setMode={setMode} />
           <MainPanelSwitcher mainPanel={mainPanel} setMainPanel={setMainPanel} />
+          <PreviewSettings />
         </SettingsModal>
       )}
     </div>

@@ -1096,6 +1096,59 @@ tbody tr:hover td {
   color: var(--text);
 }
 
+.preview-settings-status {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.preview-settings-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.preview-settings-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.preview-settings-hint {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: normal;
+}
+
+.preview-settings-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.preview-settings-controls input[type="range"] {
+  flex: 1;
+  min-width: 0;
+}
+
+.preview-settings-controls input[type="number"] {
+  width: 68px;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.preview-settings-unit {
+  font-size: 12px;
+  color: var(--muted);
+  min-width: 20px;
+}
+
 .mode-segmented {
   display: flex;
   gap: 4px;
