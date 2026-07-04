@@ -29,7 +29,7 @@ _CONFIG_TOML = """[pipeline.spot_extraction]
 method = "improved_circle_fit"
 gaussian_kernel = 9
 gaussian_sigma = 2.0
-centroid_threshold = 0.3
+centroid_threshold = 0.8
 
 
 [calibration.front_camera]

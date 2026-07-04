@@ -92,7 +92,7 @@ class SpotExtractionConfig(BaseModel):
     method: str = "improved_circle_fit"
     gaussian_kernel: int = 9
     gaussian_sigma: float = 2.0
-    centroid_threshold: float = 0.3
+    centroid_threshold: float = 0.8
 
 
 class PipelineConfig(BaseModel):

@@ -13,10 +13,12 @@ from ..types import Point2D, SpotPair
 #   INTENSITY_FLOOR    = 30：真光斑 peak=255，全黑噪声 peak=8-11；30 是安全下限
 #   SATURATION_CEIL    = 15%：0701 高曝光批次真光斑 mask 5-12%，饱和取景框 ≥ 30%；
 #                             15% 仍能干净分离两类（旧值 5% 会误杀高曝光真光斑）
-#   LOCAL_WINDOW_HALF  = 30 px：约覆盖真光斑主体（含 halo）而不至于卷入远处散乱噪声
+#   LOCAL_WINDOW_HALF  = 150 px：光斑大而饱和（半径约 120px），窗口须罩住整斑。
+#                             旧值 30px 只框住中心，配合低阈值会让重心被拖尾拉偏
+#                             （见 scripts/exp/exp_b_centroid.md：窗口+阈值联合使 σ 腰斩）。
 INTENSITY_FLOOR = 30.0
 SATURATION_CEIL = 0.15
-LOCAL_WINDOW_HALF = 30
+LOCAL_WINDOW_HALF = 150
 
 
 @dataclass
@@ -82,8 +84,10 @@ def _extract_single(
     3. 硬门槛（防止在垃圾图上返回伪坐标）：
        - max_val < INTENSITY_FLOOR：几乎全黑，只有传感器噪声，抛异常。
        - 全局 mask 占比 > SATURATION_CEIL：大面积饱和（拍到取景框而非圆版），抛异常。
-    4. 只在峰值 ±LOCAL_WINDOW_HALF 窗口内做加权重心。局部窗口天然过滤远处的散乱噪声，
-       避免旧实现"全局 mask 内加权重心 → 落在图像中心"的伪坐标。
+    4. 在峰值 ±LOCAL_WINDOW_HALF(150px) 窗口内做加权重心。窗口须罩住整个光斑
+       （半径约 120px），既排除远处散乱噪声，又不因窗口过小切掉光斑主体；
+       配合高阈值(centroid_threshold≈0.8)切掉不对称拖尾，避免重心被拉偏
+       （见 scripts/exp/exp_b_centroid.md）。
     5. quality 仍用全局 mask 计算，用来在 UI 层再兜一层"无效采样"的判断。
     """
     blurred = cv2.GaussianBlur(
