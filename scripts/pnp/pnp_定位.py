@@ -1,9 +1,10 @@
 """一站式 PnP 定位入口。
 
-输入：一个 frame 目录，下含 front/ 和 rear/ 两个子目录。
-流程：内层四边形检测（dcpam_cv.pnp.FrameRectangleAnnotator）
-      → 平面 PnP 求解（dcpam_cv.pnp.FramePoseEstimator）
-      → 把相机系下取景框平面 + camera_to_device 刚体变换写回 config.toml。
+输入：一个 frame 目录，下含 front/ 和 rear/ 两个子目录，每个里面是同一成像面
+      不同光照重复拍摄的标定图。
+流程：5 圆点圆心检测（dcpam_cv.pnp.CircleCenterDetector）
+      → 通用平面 PnP 求解（dcpam_cv.pnp.FramePoseEstimator）
+      → 把相机系下成像面 + camera_to_device 刚体变换写回 config.toml。
 """
 from __future__ import annotations
 
@@ -16,28 +17,38 @@ import numpy as np
 from dcpam_cv.config import load_config
 from dcpam_cv.path import DCPAMPaths
 from dcpam_cv.pnp import (
+    CircleCenterDetector,
     DeviceFrameConvention,
     FramePoseEstimate,
     FramePoseEstimator,
-    FrameRectangleAnnotator,
     load_pnp_convention,
 )
 
 
 def run(frame_dir: Path, config_path: Path, pnp_path: Path) -> None:
-    averages = FrameRectangleAnnotator(frame_dir).run()
-    print(f"四边形检测完成: {frame_dir}")
-
     convention = load_pnp_convention(pnp_path)
-    estimator = FramePoseEstimator(convention.frame_width_mm, convention.frame_height_mm)
     config = load_config(config_path)
+    detector = CircleCenterDetector()
+    estimator = FramePoseEstimator()
+
+    planes = {"front": convention.front, "rear": convention.rear}
+    intrinsics = {
+        "front": config.calibration.front_camera,
+        "rear": config.calibration.rear_camera,
+    }
 
     estimates: dict[str, FramePoseEstimate] = {}
     for role in ("front", "rear"):
-        intrinsics = config.calibration.front_camera if role == "front" else config.calibration.rear_camera
-        estimates[role] = estimator.estimate(averages[role].to_image_quadrilateral(), intrinsics)
+        image_points = detector.detect_role(frame_dir / role)
+        # front 配 front、rear 配 rear；图内 5 点顺序未知，用排列择优对应。
+        estimate, _ = estimator.estimate_unordered(
+            planes[role].object_points_array(),
+            image_points,
+            intrinsics[role],
+        )
+        estimates[role] = estimate
 
-    _write_config(config_path, estimates, convention)
+    _write_config(config_path, estimates, planes)
     _print_summary(estimates)
     print(f"已更新配置: {config_path}")
 
@@ -45,7 +56,7 @@ def run(frame_dir: Path, config_path: Path, pnp_path: Path) -> None:
 def _write_config(
     config_path: Path,
     estimates: dict[str, FramePoseEstimate],
-    convention,
+    planes: dict[str, DeviceFrameConvention],
 ) -> None:
     with config_path.open("rb") as file:
         raw = tomllib.load(file)
@@ -54,8 +65,8 @@ def _write_config(
     surfaces = calibration.setdefault("frame_surfaces", {})
     surfaces["front_frame_pnp"] = _surface_config(estimates["front"])
     surfaces["rear_frame_pnp"] = _surface_config(estimates["rear"])
-    calibration["front_camera_to_device"] = _camera_to_device(estimates["front"], convention.front)
-    calibration["rear_camera_to_device"] = _camera_to_device(estimates["rear"], convention.rear)
+    calibration["front_camera_to_device"] = _camera_to_device(estimates["front"], planes["front"])
+    calibration["rear_camera_to_device"] = _camera_to_device(estimates["rear"], planes["rear"])
     config_path.write_text(_render_toml(raw), encoding="utf-8")
 
 
@@ -153,12 +164,12 @@ def _render_list(values: list) -> str:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="一站式 PnP 定位：检测 + 求解 + 写回 config.toml")
+    parser = argparse.ArgumentParser(description="一站式 PnP 定位：5 圆点检测 + 求解 + 写回 config.toml")
     parser.add_argument(
         "--frame-dir",
         type=Path,
         required=True,
-        help="包含 front/ 和 rear/ 两个子目录的取景框根目录",
+        help="包含 front/ 和 rear/ 两个子目录的成像面标定图根目录",
     )
     parser.add_argument("--config", type=Path, default=DCPAMPaths().config_file)
     parser.add_argument("--pnp", type=Path, default=Path("pnp.toml"))
