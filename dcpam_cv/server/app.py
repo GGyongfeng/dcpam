@@ -35,17 +35,29 @@ CONFIG_PATH = PATHS.config_file
 CONFIG_BACKUP_DIR = DATA_DIR / "config_backups"
 
 CAPTURE_MAX_N = 50
-PREVIEW_MAX_SIDE = 1280
-PREVIEW_QUALITY = 75
+PREVIEW_MAX_SIDE = 800
+PREVIEW_QUALITY = 60
 
 _NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
-PREVIEW_INTERVAL_S = 0.1  # ~10 fps
+PREVIEW_INTERVAL_S = 0.033  # ~30 fps 上限（实际取决于相机 fps）
 
 _camera_lock = threading.RLock()
 _camera = None
 _camera_error: Optional[str] = None
 _last_capture_error: Optional[str] = None
 _last_capture_ts: float = 0.0
+
+# ---- Preview 生产者-消费者共享状态 ----
+# 一个后台线程持续 cam.capture() → _latest_pair；两条 MJPEG 消费者从
+# Condition 上等新帧，不再各自 capture，也不抢 _camera_lock。
+_frame_cond = threading.Condition()
+_latest_pair = None                 # 最新的 ImagePair（或 None 表示上一次失败）
+_latest_pair_seq: int = 0           # 每收到新帧自增，供消费者判断"是不是新的"
+_latest_pair_error: Optional[str] = None  # 若上次 capture 失败，这里保留错误消息
+_preview_thread: Optional[threading.Thread] = None
+_preview_stop = threading.Event()
+_preview_consumers: int = 0
+_preview_consumers_lock = threading.Lock()
 
 
 def _mark_capture_ok() -> None:
@@ -286,21 +298,130 @@ def _error_frame(message: str) -> bytes:
     return _encode_jpeg(canvas)
 
 
-def _preview_generator(which: str):
-    boundary = b"--frame\r\n"
-    while True:
+def _preview_producer_loop() -> None:
+    """后台线程：持续 cam.capture() 并把最新一对图放到 _latest_pair。
+
+    - 通过 Condition.notify_all() 唤醒所有等待的消费者
+    - 每轮结束用 _preview_stop.wait(PREVIEW_INTERVAL_S) 做限速，也用来响应停止
+    - _camera_lock 保证跟 /api/capture 天然互斥：采样期间生产者会自然阻塞
+    """
+    global _latest_pair, _latest_pair_seq, _latest_pair_error
+    while not _preview_stop.is_set():
+        pair = None
+        error: Optional[str] = None
         try:
             with _camera_lock:
                 cam = _get_camera()
                 pair = cam.capture()
             _mark_capture_ok()
-            frame = pair.front if which == "front" else pair.rear
-            jpeg = _encode_jpeg(frame)
         except Exception as exc:
-            _mark_capture_failed(_describe(exc))
-            jpeg = _error_frame(_describe(exc))
-        yield boundary + b"Content-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n"
-        time.sleep(PREVIEW_INTERVAL_S)
+            error = _describe(exc)
+            _mark_capture_failed(error)
+
+        with _frame_cond:
+            _latest_pair = pair
+            _latest_pair_error = error
+            _latest_pair_seq += 1
+            _frame_cond.notify_all()
+
+        # 失败时退避 0.5s，成功时按 PREVIEW_INTERVAL_S 限速；两种情况都能被 stop 打断
+        delay = 0.5 if error else PREVIEW_INTERVAL_S
+        if _preview_stop.wait(delay):
+            break
+
+
+def _acquire_preview_producer() -> None:
+    """新增一个 MJPEG 消费者；必要时启动生产者线程。"""
+    global _preview_thread, _preview_consumers
+    with _preview_consumers_lock:
+        _preview_consumers += 1
+        if _preview_thread is None or not _preview_thread.is_alive():
+            _preview_stop.clear()
+            _preview_thread = threading.Thread(
+                target=_preview_producer_loop,
+                name="dcpam-preview",
+                daemon=True,
+            )
+            _preview_thread.start()
+
+
+def _release_preview_producer() -> None:
+    """消费者退出；引用计数归零时通知生产者停下。"""
+    global _preview_thread, _preview_consumers
+    with _preview_consumers_lock:
+        _preview_consumers -= 1
+        if _preview_consumers <= 0:
+            _preview_consumers = 0
+            _preview_stop.set()
+            _preview_thread = None  # 不 join：让 daemon 线程自行退出，避免阻塞请求
+
+
+def _preview_generator(which: str):
+    """MJPEG 消费者：从 _frame_cond 上等新帧，encode，yield。"""
+    boundary = b"--frame\r\n"
+    _acquire_preview_producer()
+    last_seen = -1
+    try:
+        while True:
+            with _frame_cond:
+                # 至多等 1s；超时也继续循环，保持 HTTP 连接活着
+                _frame_cond.wait_for(
+                    lambda: _latest_pair_seq != last_seen,
+                    timeout=1.0,
+                )
+                if _latest_pair_seq == last_seen:
+                    continue
+                pair = _latest_pair
+                error = _latest_pair_error
+                last_seen = _latest_pair_seq
+
+            try:
+                if pair is None:
+                    jpeg = _error_frame(error or "camera error")
+                else:
+                    frame = pair.front if which == "front" else pair.rear
+                    jpeg = _encode_jpeg(frame)
+            except Exception as exc:
+                jpeg = _error_frame(_describe(exc))
+
+            yield boundary + b"Content-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n"
+    finally:
+        _release_preview_producer()
+
+
+class PreviewConfigUpdate(BaseModel):
+    """预览参数的运行时可调项。所有字段可选，仅传的字段会被更新。"""
+    interval_ms: Optional[int] = None      # 0 ~ 500 ms
+    max_side: Optional[int] = None         # 200 ~ 2600 px
+    quality: Optional[int] = None          # 1 ~ 100
+
+
+@app.get("/api/preview/config")
+def get_preview_config() -> dict:
+    return {
+        "interval_ms": int(round(PREVIEW_INTERVAL_S * 1000)),
+        "max_side": PREVIEW_MAX_SIDE,
+        "quality": PREVIEW_QUALITY,
+    }
+
+
+@app.post("/api/preview/config")
+def set_preview_config(update: PreviewConfigUpdate = Body(...)) -> dict:
+    """运行时改预览参数——生产者/编码器在下一帧就读取新值，无需重启。"""
+    global PREVIEW_INTERVAL_S, PREVIEW_MAX_SIDE, PREVIEW_QUALITY
+    if update.interval_ms is not None:
+        if not (0 <= update.interval_ms <= 500):
+            raise HTTPException(400, "interval_ms 必须在 0-500 之间")
+        PREVIEW_INTERVAL_S = update.interval_ms / 1000.0
+    if update.max_side is not None:
+        if not (200 <= update.max_side <= 2600):
+            raise HTTPException(400, "max_side 必须在 200-2600 之间")
+        PREVIEW_MAX_SIDE = int(update.max_side)
+    if update.quality is not None:
+        if not (1 <= update.quality <= 100):
+            raise HTTPException(400, "quality 必须在 1-100 之间")
+        PREVIEW_QUALITY = int(update.quality)
+    return get_preview_config()
 
 
 @app.get("/api/preview.mjpeg")
