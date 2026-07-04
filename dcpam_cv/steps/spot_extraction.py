@@ -11,10 +11,11 @@ from ..types import Point2D, SpotPair
 
 # 提取端硬门槛（在真实数据上校准，见 _compute_quality 文档）：
 #   INTENSITY_FLOOR    = 30：真光斑 peak=255，全黑噪声 peak=8-11；30 是安全下限
-#   SATURATION_CEIL    = 5%：真光斑 mask ≤ 3.4%，饱和取景框 ≥ 5.3%；5% 干净分离两类
+#   SATURATION_CEIL    = 15%：0701 高曝光批次真光斑 mask 5-12%，饱和取景框 ≥ 30%；
+#                             15% 仍能干净分离两类（旧值 5% 会误杀高曝光真光斑）
 #   LOCAL_WINDOW_HALF  = 30 px：约覆盖真光斑主体（含 halo）而不至于卷入远处散乱噪声
 INTENSITY_FLOOR = 30.0
-SATURATION_CEIL = 0.05
+SATURATION_CEIL = 0.15
 LOCAL_WINDOW_HALF = 30
 
 
