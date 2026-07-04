@@ -53,14 +53,6 @@ class PlaneConfig(BaseModel):
     d: float
 
 
-class PlaneCalibrationConfig(BaseModel):
-    """四个光学平面的标定结果。"""
-    front_image_real: PlaneConfig | None = None
-    rear_image_real: PlaneConfig | None = None
-    front_reflection: PlaneConfig | None = None
-    rear_reflection: PlaneConfig | None = None
-
-
 class FrameSurfaceConfig(BaseModel):
     """PnP 得到的取景框平面（相机坐标系下，仅 pipeline 反投影使用的字段）。"""
     method: str = "pnp_frame_pose"
@@ -85,7 +77,6 @@ class CalibrationConfig(BaseModel):
     """完整标定配置。"""
     front_camera: CameraIntrinsics
     rear_camera: CameraIntrinsics
-    planes: PlaneCalibrationConfig = PlaneCalibrationConfig()
     frame_surfaces: FrameSurfaceCalibrationConfig = FrameSurfaceCalibrationConfig()
     # 相机坐标系 → 各自取景框局部系（前后独立，不含设备装配尺寸）。
     front_camera_to_frame: RigidTransformConfig | None = None
