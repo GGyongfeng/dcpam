@@ -1,25 +1,16 @@
-# PnP 标定阶段的设备端约定。
+# PnP 标定阶段的设备端约定：每个成像面上 5 个圆点在其局部坐标系下的坐标。
 #
-# 用途：scripts/pnp/pnp_定位.py 在执行 PnP 求解后，
-# 用这里的"设备端约定"把 PnP 给出的"相机⇄成像面"姿态拼成
-# "相机⇄设备"的刚体变换，写入 config.toml.calibration.{front,rear}_camera_to_device。
+# 用途：scripts/pnp/pnp_定位.py 用这里的 points 作为 object points 做 PnP，
+# 解出「相机→成像面局部系」写入 config.toml.calibration.{front,rear}_camera_to_frame。
+# 只在标定时被消费；pipeline 运行时不读本文件。
 #
-# 这些约定只在标定时被消费；pipeline 运行时不再读取本文件。
-#
-# 标定方式：每个成像面贴 5 个黑圆点，用影像仪测出它们在该成像面设备局部坐标系下的
-# 坐标（见 points）。标定时从相机图提取 5 个圆心像素坐标，与 points 做 PnP。
 # points 由 scripts/pnp/pnp_影像仪转换.py 从 dataset/pnp/20260702.xlsx 生成，
 # 并导出到 dataset/pnp/imaging_plane_points_device.csv；此处为其副本。
-# 圆点顺序：左上, 右上, 中, 左下, 右下。
+# 每次影像仪重新测量后需同步更新 points。圆点顺序：左上, 右上, 中, 左下, 右下。
+# 坐标已在成像面局部系下（原点=框中心，自带朝向），故无需再给框的 point/normal/x_axis。
 
-# 前成像面（2 号镜）：把设备坐标原点放在前框中心，z 轴朝远离相机方向（与设备规格一致）。
+# 前成像面（2 号镜）：5 圆点局部坐标(mm)。
 [front_frame]
-point = [0.0, 0.0, 0.0]
-normal = [0.0, 0.0, 1.0]
-# 框平面内的 x 轴方向（设备坐标系单位向量）。
-# 框平面内的 y 轴由 normal × x_axis 自动正交化。
-x_axis = [1.0, 0.0, 0.0]
-# 5 圆点在本成像面设备局部坐标系下的坐标(mm)，顺序：左上, 右上, 中, 左下, 右下。
 points = [
     [-9.1487, -3.7806, 0.0002],
     [8.4573, -7.28, 0.0002],
@@ -28,13 +19,9 @@ points = [
     [8.1005, 5.5575, -0.0003],
 ]
 
-# 后成像面（1 号镜）：标定只求"相机→后框局部系"，故原点取后框中心自身（[0,0,0]）。
-# 后框相对前框的 80mm 装配平移（及安装误差）已解耦到 config.toml 的
-# [calibration.rear_to_front]，不再进 PnP 标定。
+# 后成像面（1 号镜）：5 圆点局部坐标(mm)。
+# 后框相对前框的 80mm 装配变换已解耦到 config.toml 的 geometry.rear_to_front。
 [rear_frame]
-point = [0.0, 0.0, 0.0]
-normal = [0.0, 0.0, 1.0]
-x_axis = [1.0, 0.0, 0.0]
 points = [
     [-8.6113, -5.9634, -0.0002],
     [6.4568, -6.1447, -0.0],

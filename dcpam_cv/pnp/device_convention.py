@@ -1,5 +1,5 @@
-"""pnp.toml 里的设备端约定：每个成像面在设备系下的中心、法向、x 轴，
-以及贴在该面上的 5 个圆点在设备局部坐标系下的坐标（PnP 的 object points）。"""
+"""pnp.toml 里的设备端约定：每个成像面上 5 个圆点在其局部坐标系下的坐标
+（PnP 的 object points，自带朝向、原点为框中心）。"""
 from __future__ import annotations
 
 import tomllib
@@ -10,10 +10,7 @@ from pydantic import BaseModel
 
 
 class DeviceFrameConvention(BaseModel):
-    point: tuple[float, float, float]
-    normal: tuple[float, float, float]
-    x_axis: tuple[float, float, float]
-    # 5 圆点在本成像面设备局部坐标系下的坐标(mm)，顺序：左上, 右上, 中, 左下, 右下。
+    # 5 圆点在本成像面局部坐标系下的坐标(mm)，顺序：左上, 右上, 中, 左下, 右下。
     object_points: list[tuple[float, float, float]]
 
     def object_points_array(self) -> np.ndarray:
@@ -31,12 +28,7 @@ def load_pnp_convention(path: Path) -> PnpDeviceConvention:
         raw = tomllib.load(file)
 
     def build(section: dict) -> DeviceFrameConvention:
-        return DeviceFrameConvention(
-            point=section["point"],
-            normal=section["normal"],
-            x_axis=section["x_axis"],
-            object_points=section["points"],
-        )
+        return DeviceFrameConvention(object_points=section["points"])
 
     return PnpDeviceConvention(
         front=build(raw["front_frame"]),

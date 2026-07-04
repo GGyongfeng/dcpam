@@ -19,7 +19,6 @@ from dcpam_cv.config import load_config
 from dcpam_cv.path import DCPAMPaths
 from dcpam_cv.pnp import (
     CircleCenterDetector,
-    DeviceFrameConvention,
     FramePoseEstimate,
     FramePoseEstimator,
     load_pnp_convention,
@@ -49,7 +48,7 @@ def run(frame_dir: Path, config_path: Path, pnp_path: Path) -> None:
         )
         estimates[role] = estimate
 
-    _write_config(config_path, estimates, planes)
+    _write_config(config_path, estimates)
     _print_summary(estimates)
     print(f"已更新配置: {config_path}")
 
@@ -57,7 +56,6 @@ def run(frame_dir: Path, config_path: Path, pnp_path: Path) -> None:
 def _write_config(
     config_path: Path,
     estimates: dict[str, FramePoseEstimate],
-    planes: dict[str, DeviceFrameConvention],
 ) -> None:
     with config_path.open("rb") as file:
         raw = tomllib.load(file)
@@ -69,8 +67,8 @@ def _write_config(
     surfaces = calibration.setdefault("frame_surfaces", {})
     surfaces["front_frame_pnp"] = _surface_config(estimates["front"])
     surfaces["rear_frame_pnp"] = _surface_config(estimates["rear"])
-    calibration["front_camera_to_frame"] = _camera_to_frame(estimates["front"], planes["front"])
-    calibration["rear_camera_to_frame"] = _camera_to_frame(estimates["rear"], planes["rear"])
+    calibration["front_camera_to_frame"] = _camera_to_frame(estimates["front"])
+    calibration["rear_camera_to_frame"] = _camera_to_frame(estimates["rear"])
     # 注意：后框→前框装配变换 geometry.rear_to_front 属设备物理测量，由人手动填写，
     # 标定脚本不写、不动它。
     config_path.write_text(_render_toml(raw), encoding="utf-8")
@@ -88,28 +86,18 @@ def _surface_config(estimate: FramePoseEstimate) -> dict:
     }
 
 
-def _camera_to_frame(estimate: FramePoseEstimate, frame: DeviceFrameConvention) -> dict:
-    """把 PnP 给出的 frame→camera 姿态拼成 camera→取景框局部系 刚体变换。
+def _camera_to_frame(estimate: FramePoseEstimate) -> dict:
+    """相机→取景框局部系 = PnP 给出的 frame→camera 姿态求逆。
 
-    frame.point 为该框局部系原点（前后都取框中心 [0,0,0]）；normal/x_axis 定义
-    局部系朝向。装配尺寸（后框相对前框的 80mm 等）不在此处，已解耦到 rear_to_front。
+    5 圆点 object points 已在取景框局部系下（自带朝向、原点=框中心），故
+    camera→frame 就是 (R_pnp, t_pnp) 的逆：R = R_pnpᵀ, t = -R_pnpᵀ @ t_pnp。
     """
     R_pnp = estimate.pose.rotation_matrix()
     t_pnp = estimate.pose.translation_vector()
-
-    z_dev = _unit(np.array(frame.normal, dtype=np.float64))
-    x_dev = _unit(np.array(frame.x_axis, dtype=np.float64))
-    x_dev = _unit(x_dev - (x_dev @ z_dev) * z_dev)
-    y_dev = np.cross(z_dev, x_dev)
-    B_dev = np.column_stack([x_dev, y_dev, z_dev])
-
-    p_frame_center = np.array(frame.point, dtype=np.float64)
-    R_cam_to_frame = (R_pnp @ B_dev.T).T
-    t_cam_to_frame = p_frame_center - R_cam_to_frame @ t_pnp
-
+    rotation = R_pnp.T
     return {
-        "rotation": [_vector(row) for row in R_cam_to_frame],
-        "translation": _vector(t_cam_to_frame),
+        "rotation": [_vector(row) for row in rotation],
+        "translation": _vector(-rotation @ t_pnp),
     }
 
 
