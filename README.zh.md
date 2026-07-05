@@ -64,11 +64,14 @@ uv run python scripts/capture_once.py       # 单次抓一对帧到 pictures/
 
 ## 仓库结构
 
-- `dcpam_cv/`：可复用的 CV 与精度分析代码
+- `dcpam_cv/`：可复用的 CV 核心（config/pipeline/optical_geometry/pnp/steps/camera）
 - `dcpam_cv/camera.py`：双相机采集控制器（Windows→gxipy，其他→Aravis，接口统一）
-- `dcpam_cv/server/`：FastAPI 后端（拍照、圆心提取、JSONL 落盘）
-- `dcpam_cv/web/`：React + Three.js 前端
+- `dcpam-app/`：应用层（不依赖顺序：应用 → 核心，核心不反向依赖应用）
+  - `dcpam-app/server/`：FastAPI 后端 + CLI（拍照、圆心提取、JSONL 落盘）
+  - `dcpam-app/web/`：React + Three.js 前端
+  - `dcpam-app/desktop/`：桌面程序（预留，将来 pywebview + PyInstaller 打包 exe）
 - `scripts/`：可直接运行的脚本
+- `exp/`：降方差优化实验记录
 - `data/`：测量模式输出目录（imgs/ + measurements.jsonl，已加入 .gitignore）
 - `pictures/`：`scripts/capture_once.py` 的采集图像保存目录
 - `docs/`：项目说明与规范文档

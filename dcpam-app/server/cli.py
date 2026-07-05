@@ -9,8 +9,8 @@ import threading
 import time
 from pathlib import Path
 
-from .path import DCPAMPaths
-from .pipeline import console
+from dcpam_cv.path import DCPAMPaths
+from dcpam_cv.pipeline import console
 from .startup import print_health_report
 
 DEFAULT_HOST = "127.0.0.1"
@@ -42,7 +42,7 @@ def _ensure_aravis_libs() -> None:
 
 def _start_backend(host: str, port: int) -> threading.Thread:
     """在后台线程跑 uvicorn。"""
-    from .server import run as run_server
+    from .app import run as run_server
 
     thread = threading.Thread(
         target=run_server,
@@ -56,7 +56,8 @@ def _start_backend(host: str, port: int) -> threading.Thread:
 
 def _start_frontend() -> subprocess.Popen:
     """启动 vite dev server。失败抛出 RuntimeError。"""
-    web_dir = Path(__file__).resolve().parent / "web"
+    # cli 现处 dcpam-app/server/，web 在 dcpam-app/web/
+    web_dir = Path(__file__).resolve().parent.parent / "web"
     if not (web_dir / "node_modules").exists():
         raise RuntimeError(
             f"前端依赖未安装：请先 cd {web_dir} && npm install"

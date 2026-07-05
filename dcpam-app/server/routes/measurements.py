@@ -17,10 +17,10 @@ from fastapi import APIRouter, Body, HTTPException
 from fastapi.responses import StreamingResponse
 
 from .. import state
-from ...config import SpotExtractionConfig
+from dcpam_cv.config import SpotExtractionConfig
 from ..constants import CAPTURE_MAX_N, MEASUREMENTS_DIR, _NAME_RE
 from ..schemas import CaptureRequest, ExportRequest
-from ...steps.spot_extraction import extract_spots
+from dcpam_cv.steps.spot_extraction import extract_spots
 
 router = APIRouter()
 

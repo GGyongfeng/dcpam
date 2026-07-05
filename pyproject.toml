@@ -6,8 +6,8 @@ build-backend = "hatchling.build"
 allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
-# 指定源码包路径
-packages = ["dcpam_cv"]
+# 两个源码根：核心包 dcpam_cv（仓库根）+ 应用后端包 server（dcpam-app 下）
+packages = ["dcpam_cv", "dcpam-app/server"]
 
 [project]
 name = "dcpam"
@@ -32,4 +32,4 @@ dependencies = [
 camera = ["PyGObject>=3.50.0"]
 
 [project.scripts]
-dcpam = "dcpam_cv.cli:main"
+dcpam = "server.cli:main"

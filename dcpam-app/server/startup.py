@@ -8,7 +8,7 @@ import sys
 from pydantic import BaseModel
 from rich.console import Console
 
-from .path import DCPAMPaths
+from dcpam_cv.path import DCPAMPaths
 
 BANNER = r"""
      ____  ______  ____  ___    __  ___
@@ -43,7 +43,7 @@ def _check_camera_sdk() -> CheckResult:
 
 def _check_gxipy() -> CheckResult:
     try:
-        from .camera import _get_gxipy  # noqa: WPS433 局部导入避免循环
+        from dcpam_cv.camera import _get_gxipy  # noqa: WPS433 局部导入避免循环
         _get_gxipy()
         return CheckResult(name="Galaxy SDK", passed=True, message="已加载 gxipy")
     except Exception as exc:
@@ -129,7 +129,7 @@ def _check_cameras() -> CheckResult:
 
 def _check_cameras_daheng() -> CheckResult:
     try:
-        from .camera import _get_gxipy
+        from dcpam_cv.camera import _get_gxipy
         gx = _get_gxipy()
         dm = gx.DeviceManager()
         n, dev_info_list = dm.update_device_list()

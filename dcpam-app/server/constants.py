@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 
-from ..path import DCPAMPaths
+from dcpam_cv.path import DCPAMPaths
 
 PATHS = DCPAMPaths()
 DATA_DIR = PATHS.root / "data"

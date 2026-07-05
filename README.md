@@ -89,8 +89,10 @@ uv run python scripts/run_analysis.py
 
 ## Repository Layout
 
-- `dcpam_cv/` — 核心模块（相机采集、配置管理、精度分析）
+- `dcpam_cv/` — 核心模块（相机采集、配置管理、CV pipeline）
+- `dcpam-app/` — 应用层（server 后端 + CLI、web 前端、desktop 预留）
 - `scripts/` — 可执行脚本
+- `exp/` — 降方差优化实验
 - `docs/` — 架构设计文档
 - `papers/` — 论文
 
