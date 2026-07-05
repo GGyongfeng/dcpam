@@ -48,4 +48,4 @@ P_camera = R_frame_to_camera · P_frame + t_frame_to_camera
 
 `geometry` 只保存算法关心的设备坐标系几何，例如反射面和探测杆 `root + length`。这些量用于计算，不追求把实体模型画得完整。
 
-Web 端为了把设备画得更清楚，另有 `dcpam-app/web/src/device_visual.toml` 保存底板、玻璃片厚度、取景框外轮廓、探杆半径等可视化参数。这些参数不属于核心算法配置，用户上传 `config.toml` 时也不需要包含它们。
+Web 端为了把设备画得更清楚，另有 `dcpam_app/web/src/device_visual.toml` 保存底板、玻璃片厚度、取景框外轮廓、探杆半径等可视化参数。这些参数不属于核心算法配置，用户上传 `config.toml` 时也不需要包含它们。

@@ -14,8 +14,8 @@ import cv2
 import numpy as np
 from pydantic import BaseModel
 
-from dcpam_cv.config import SpotExtractionConfig
-from dcpam_cv.steps.spot_extraction import extract_spots
+from dcpam.config import SpotExtractionConfig
+from dcpam.steps.spot_extraction import extract_spots
 
 
 class ImagePairPaths(BaseModel):

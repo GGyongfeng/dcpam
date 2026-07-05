@@ -27,7 +27,7 @@
   （object points，`pnp.toml` 的 `points`；转换脚本 `scripts/pnp/pnp_影像仪转换.py`）。
 - 标定时用 `cv2.normalize` + `SimpleBlobDetector` 提取 5 个圆心（对多光照鲁棒，
   实测 54/54 全中），与 object points 做 PnP（排列择优解决点序对应）。
-- 新增 `dcpam_cv/pnp/circles.py`；`pose.py` 改为通用 PnP + `estimate_unordered`；
+- 新增 `dcpam/pnp/circles.py`；`pose.py` 改为通用 PnP + `estimate_unordered`；
   删除 `rectangle.py`（矩形拟合整套）。
 
 **排查中修正的两个 bug**：
@@ -89,7 +89,7 @@
   camera→frame 就是 PnP 位姿的逆（`R=R_pnpᵀ, t=-R_pnpᵀ@t_pnp`），去掉冗余的
   基构造/平移（15 行→5 行）。
 - `pnp.toml` 删除不再参与计算的 `point`/`normal`/`x_axis`，只留 `points`。
-- 删除死代码 `dcpam_cv/precision/`、过时文档与产物。
+- 删除死代码 `dcpam/precision/`、过时文档与产物。
 
 ---
 

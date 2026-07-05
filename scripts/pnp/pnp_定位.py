@@ -2,8 +2,8 @@
 
 输入：一个 frame 目录，下含 front/ 和 rear/ 两个子目录，每个里面是同一成像面
       不同光照重复拍摄的标定图。
-流程：5 圆点圆心检测（dcpam_cv.pnp.CircleCenterDetector）
-      → 通用平面 PnP 求解（dcpam_cv.pnp.FramePoseEstimator）
+流程：5 圆点圆心检测（dcpam.pnp.CircleCenterDetector）
+      → 通用平面 PnP 求解（dcpam.pnp.FramePoseEstimator）
       → 把「相机→各自取景框局部系」写回 config.toml（前后独立，不含装配尺寸）；
         后框→前框（设备系）的 80mm 装配变换以 geometry.rear_to_front 单独维护。
 """
@@ -15,9 +15,9 @@ from pathlib import Path
 
 import numpy as np
 
-from dcpam_cv.config import load_config
-from dcpam_cv.path import DCPAMPaths
-from dcpam_cv.pnp import (
+from dcpam.config import load_config
+from dcpam.path import DCPAMPaths
+from dcpam.pnp import (
     CircleCenterDetector,
     FramePoseEstimate,
     FramePoseEstimator,
@@ -170,7 +170,7 @@ def main() -> None:
         help="包含 front/ 和 rear/ 两个子目录的成像面标定图根目录",
     )
     parser.add_argument("--config", type=Path, default=DCPAMPaths().config_file)
-    parser.add_argument("--pnp", type=Path, default=Path("pnp.toml"))
+    parser.add_argument("--pnp", type=Path, default=DCPAMPaths().pnp_file)
     args = parser.parse_args()
 
     run(args.frame_dir, args.config, args.pnp)

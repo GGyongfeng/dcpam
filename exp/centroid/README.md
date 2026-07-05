@@ -5,7 +5,7 @@
 
 ## 背景
 
-当前提取（`dcpam_cv/steps/spot_extraction.py`）：峰值定位 → **局部窗口 ±30px 内**
+当前提取（`dcpam/steps/spot_extraction.py`）：峰值定位 → **局部窗口 ±30px 内**
 强度加权重心，阈值 `centroid_threshold=0.3`。用户怀疑光斑不圆影响重心。
 
 实测发现光斑不是小圆点，而是**大而饱和**：mask 约 4.5 万像素、4.3 万像素=255（纯饱和）、

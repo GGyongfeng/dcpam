@@ -11,7 +11,7 @@
 ## 1. 背景与动机
 
 旧 PnP 标定从标定图里拟合取景框内层四边形的 4 个角点做 PnP
-（`dcpam_cv/pnp/rectangle.py` + `pose.py`）。边缘提取不清晰，重投影误差高达
+（`dcpam/pnp/rectangle.py` + `pose.py`）。边缘提取不清晰，重投影误差高达
 **20~39px**，是测量精度的一个瓶颈。
 
 新方案：在每个成像面贴 5 个黑圆点，用影像仪测出它们在成像面设备局部坐标系下的
@@ -57,7 +57,7 @@
 2. **CLAHE + 自适应阈值** → 反而更差（front 仅 1/32）。
 3. **Otsu 分白块 + 块内相对阈值找洞** → 背光图对比度低，Otsu 直接失效（0/32）。
 
-**成功方案**（`dcpam_cv/pnp/circles.py`）：
+**成功方案**（`dcpam/pnp/circles.py`）：
 ```
 cv2.normalize(im, None, 0, 255, NORM_MINMAX)   # 拉满动态范围，消除光照差异
 + cv2.SimpleBlobDetector(minThreshold=10, maxThreshold=220, thresholdStep=10,
@@ -236,11 +236,11 @@ x+6mm → 177μm，因为旧标定的错误倾斜曾"抵消"靶点位置误差�
 | 文件 | 动作 |
 |---|---|
 | `pnp.toml` | 删 `[frame]`；`[front_frame]/[rear_frame]` 各加 `points`（5×3，翻 X 修正后） |
-| `dcpam_cv/pnp/device_convention.py` | 去 `frame_width/height_mm`；`DeviceFrameConvention` 加 `object_points` |
-| `dcpam_cv/pnp/pose.py` | `FramePoseEstimator` 改通用 PnP + `estimate_unordered`（120 排列择优对应） |
-| `dcpam_cv/pnp/circles.py` | 新增：normalize + SimpleBlobDetector 圆心检测 + 多图平均 |
-| `dcpam_cv/pnp/__init__.py` | 移除 rectangle 导出，加 circles 导出 |
-| `dcpam_cv/pnp/rectangle.py` | 删除 |
+| `dcpam/pnp/device_convention.py` | 去 `frame_width/height_mm`；`DeviceFrameConvention` 加 `object_points` |
+| `dcpam/pnp/pose.py` | `FramePoseEstimator` 改通用 PnP + `estimate_unordered`（120 排列择优对应） |
+| `dcpam/pnp/circles.py` | 新增：normalize + SimpleBlobDetector 圆心检测 + 多图平均 |
+| `dcpam/pnp/__init__.py` | 移除 rectangle 导出，加 circles 导出 |
+| `dcpam/pnp/rectangle.py` | 删除 |
 | `scripts/pnp/pnp_影像仪转换.py` | `_device_axes` 加相机视角翻 X（+翻 Z 保右手系）；镜编号映射 1→rear/2→front |
 | `scripts/pnp/pnp_定位.py` | 主流程改为 5 圆心检测 → 平均 → 同名配对 PnP → 写 config |
 

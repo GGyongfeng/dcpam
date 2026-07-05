@@ -1,4 +1,4 @@
-// 把 Python 端 dcpam_cv.pipeline 的 2-6 步搬到 Web。
+// 把 Python 端 dcpam.pipeline 的 2-6 步搬到 Web。
 // 只依赖 TOML 里的标定/设备几何 + CSV 里的圆心像素坐标。
 
 const UNDISTORT_ITERATIONS = 8;

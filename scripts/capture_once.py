@@ -4,7 +4,7 @@
 - 验证 SDK / 相机 / 保存路径都通了
 - 不用打开 cv2 窗口，适合远程/无 GUI 场景
 
-在 Windows 上走 gxipy 后端，其他平台走 Aravis —— 由 dcpam_cv.camera.DualCamera 内部派发。
+在 Windows 上走 gxipy 后端，其他平台走 Aravis —— 由 dcpam.camera.DualCamera 内部派发。
 
 用法：
     uv run python scripts/capture_once.py
@@ -18,13 +18,13 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 import cv2  # noqa: E402
-from dcpam_cv.camera import DualCamera  # noqa: E402
-from dcpam_cv.path import DCPAMPaths  # noqa: E402
+from dcpam.camera import DualCamera  # noqa: E402
+from dcpam.path import DCPAMPaths  # noqa: E402
 
 
 def main() -> int:
     paths = DCPAMPaths()
-    save_dir = paths.root / "pictures"
+    save_dir = paths.pictures_dir
     save_dir.mkdir(parents=True, exist_ok=True)
 
     try:

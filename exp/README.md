@@ -11,6 +11,6 @@ Python 脚本 + 结论（README.md）。都从项目根运行（`uv run python e
 
 **总结论**：方差的主要杠杆在**圆心提取**（光斑大而饱和，旧的小窗口+低阈值让重心被
 拖尾拉偏），而非几何参数。`centroid/` 的改进已合入产品代码
-（`dcpam_cv/steps/spot_extraction.py`：窗口 30→150、阈值 0.3→0.8）。
+（`dcpam/steps/spot_extraction.py`：窗口 30→150、阈值 0.3→0.8）。
 
 各方向的 σ 绝对值随"当前圆心提取基线"变化，比较时注意各 README 的时间线注记。

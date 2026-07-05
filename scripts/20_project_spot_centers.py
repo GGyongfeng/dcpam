@@ -14,13 +14,13 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from dcpam_cv.config import AppConfig, load_config
-from dcpam_cv.optical_geometry import OpticalGeometry
-from dcpam_cv.path import DCPAMPaths
-from dcpam_cv.steps.back_projection import back_project
-from dcpam_cv.steps.distance import point_to_line_distance
-from dcpam_cv.steps.mirror_transform import mirror_transform
-from dcpam_cv.types import LaserAxis, Point2D
+from dcpam.config import AppConfig, load_config
+from dcpam.optical_geometry import OpticalGeometry
+from dcpam.path import DCPAMPaths
+from dcpam.steps.back_projection import back_project
+from dcpam.steps.distance import point_to_line_distance
+from dcpam.steps.mirror_transform import mirror_transform
+from dcpam.types import LaserAxis, Point2D
 
 
 class SpotCenterRow(BaseModel):

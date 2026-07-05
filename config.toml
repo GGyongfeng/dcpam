@@ -1,3 +1,10 @@
+# DCPAM 配置模板 —— 请把本文件复制/填写为 ~/.dcpam/config.toml 后再运行测量。
+# 所有数值为占位（0 / 空），必须替换为真实标定值；未填写会导致加载报错或结果无效。
+#
+# 相机内参：由相机标定得到。
+# frame_surfaces / camera_to_frame：由 5 圆点 PnP 标定得到（scripts/pnp/pnp_定位.py 自动写入）。
+# geometry：设备物理几何，人工测量填写。
+
 [pipeline.spot_extraction]
 method = "improved_circle_fit"
 gaussian_kernel = 9
@@ -6,62 +13,64 @@ centroid_threshold = 0.8
 
 [calibration.front_camera]
 model = "OPENCV"
-focal_lengths = [2990.6987249288663, 2977.3564887249863]
-principal_point = [1296.0, 972.0]
-distortion_coeffs = [-0.18636511590856567, 0.07840190379269005, 0.0022669627721650172, -5.4958790543323754e-05]
-resolution = [2592, 1944]
+focal_lengths = [0.0, 0.0]              # [fx, fy]
+principal_point = [0.0, 0.0]            # [cx, cy]
+distortion_coeffs = [0.0, 0.0, 0.0, 0.0]  # [k1, k2, p1, p2]
+resolution = [2592, 1944]              # [width, height]
 
 [calibration.rear_camera]
 model = "OPENCV"
-focal_lengths = [3110.5703660675968, 3097.260663052594]
-principal_point = [1296.0, 972.0]
-distortion_coeffs = [-0.2237547419268369, 0.11599968695378729, -0.0010907287180217534, -0.001286167658601872]
+focal_lengths = [0.0, 0.0]
+principal_point = [0.0, 0.0]
+distortion_coeffs = [0.0, 0.0, 0.0, 0.0]
 resolution = [2592, 1944]
 
+# ↓↓↓ 以下 frame_surfaces / camera_to_frame 由 PnP 标定脚本自动写入，无需手填 ↓↓↓
 [calibration.frame_surfaces.front_frame_pnp]
 method = "pnp_frame_pose"
-point = [-0.01012247640166558, -0.28900943839774557, 37.401388937129674]
-normal = [0.004661540846939984, -0.014213711062264175, 0.9998881139681434]
-d = -37.401264954450006
+point = [0.0, 0.0, 0.0]
+normal = [0.0, 0.0, 1.0]
+d = 0.0
 
 [calibration.frame_surfaces.rear_frame_pnp]
 method = "pnp_frame_pose"
-point = [-0.2970358455958118, -0.2897098994228255, 38.19923126842921]
-normal = [-0.0027777006519370735, -0.005496992554698989, 0.9999810335461078]
-d = -38.20092437429275
+point = [0.0, 0.0, 0.0]
+normal = [0.0, 0.0, 1.0]
+d = 0.0
 
 [calibration.front_camera_to_frame]
-rotation = [
-    [0.9999299917780187, -0.010808498396190374, -0.004815382147974369],
-    [0.010875733526700173, 0.9998405606796806, 0.014162331728857036],
-    [0.004661540846939984, -0.014213711062264175, 0.9998881139681434],
-]
-translation = [0.18709999029098504, -0.24061742896233776, -37.401264954450006]
-
-[calibration.rear_camera_to_frame]
-rotation = [
-    [0.9999895995105105, 0.0036020443337514488, 0.002797525232508308],
-    [-0.003617353991118362, 0.9999784039415408, 0.005486929982391526],
-    [-0.002777700651937073, -0.005496992554698988, 0.9999810335461077],
-]
-translation = [0.19121299084341828, 0.079032651678278, -38.20092437429275]
-
-[geometry.front_reflection]
-point = [0.0, 0.0, 23.0]
-normal = [0.7071067811865475, 0.0, 0.7071067811865475]
-
-[geometry.rear_reflection]
-point = [80.0, 0.0, 23.0]
-normal = [0.7071067811865475, 0.0, 0.7071067811865475]
-
-[geometry.probe_rod]
-root = [41.0, 0.0, -132.0]
-length_mm = 586.051
-
-[geometry.rear_to_front]
 rotation = [
     [1.0, 0.0, 0.0],
     [0.0, 1.0, 0.0],
     [0.0, 0.0, 1.0],
 ]
-translation = [80.0, 0.0, 0.0]
+translation = [0.0, 0.0, 0.0]
+
+[calibration.rear_camera_to_frame]
+rotation = [
+    [1.0, 0.0, 0.0],
+    [0.0, 1.0, 0.0],
+    [0.0, 0.0, 1.0],
+]
+translation = [0.0, 0.0, 0.0]
+
+# ↓↓↓ geometry：设备物理几何，人工测量填写 ↓↓↓
+[geometry.front_reflection]
+point = [0.0, 0.0, 0.0]                 # 反射面上一点（设备系 mm）
+normal = [0.0, 0.0, 1.0]               # 反射面法向（单位向量），45°≈[0.7071,0,0.7071]
+
+[geometry.rear_reflection]
+point = [0.0, 0.0, 0.0]
+normal = [0.0, 0.0, 1.0]
+
+[geometry.probe_rod]
+root = [0.0, 0.0, 0.0]                  # 杆根位置（设备系 mm）
+length_mm = 0.0                         # 测杆长度 mm
+
+[geometry.rear_to_front]                # 后框→前框装配变换（人工测量）
+rotation = [
+    [1.0, 0.0, 0.0],
+    [0.0, 1.0, 0.0],
+    [0.0, 0.0, 1.0],
+]
+translation = [0.0, 0.0, 0.0]           # 约 [80, 0, 0]（两模块间距 mm）

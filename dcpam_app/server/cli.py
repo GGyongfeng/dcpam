@@ -9,8 +9,8 @@ import threading
 import time
 from pathlib import Path
 
-from dcpam_cv.path import DCPAMPaths
-from dcpam_cv.pipeline import console
+from dcpam.path import DCPAMPaths
+from dcpam.pipeline import console
 from .startup import print_health_report
 
 DEFAULT_HOST = "127.0.0.1"
@@ -56,7 +56,7 @@ def _start_backend(host: str, port: int) -> threading.Thread:
 
 def _start_frontend() -> subprocess.Popen:
     """启动 vite dev server。失败抛出 RuntimeError。"""
-    # cli 现处 dcpam-app/server/，web 在 dcpam-app/web/
+    # cli 现处 dcpam_app/server/，web 在 dcpam_app/web/
     web_dir = Path(__file__).resolve().parent.parent / "web"
     if not (web_dir / "node_modules").exists():
         raise RuntimeError(

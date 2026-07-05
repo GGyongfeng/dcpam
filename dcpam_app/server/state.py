@@ -64,7 +64,7 @@ def _get_camera():
     with _camera_lock:
         if _camera is not None:
             return _camera
-        from dcpam_cv.camera import DualCamera
+        from dcpam.camera import DualCamera
 
         try:
             cam = DualCamera(paths=PATHS)

@@ -9,16 +9,16 @@ import tomli_w
 from fastapi import APIRouter, Body, HTTPException
 from fastapi.responses import PlainTextResponse
 
-from ..constants import CONFIG_BACKUP_DIR, CONFIG_BACKUP_KEEP, CONFIG_PATH, PATHS
+from ..constants import CONFIG_BACKUP_KEEP, PATHS
 from ..schemas import ConfigUpdateRequest
 
 router = APIRouter()
 
 
 def _read_config_file() -> tuple[str, dict]:
-    if not CONFIG_PATH.exists():
-        raise HTTPException(404, f"config.toml 不存在：{CONFIG_PATH}")
-    text = CONFIG_PATH.read_text(encoding="utf-8")
+    if not PATHS.config_file.exists():
+        raise HTTPException(404, f"config.toml 不存在：{PATHS.config_file}")
+    text = PATHS.config_file.read_text(encoding="utf-8")
     try:
         data = tomllib.loads(text)
     except tomllib.TOMLDecodeError as exc:
@@ -27,16 +27,16 @@ def _read_config_file() -> tuple[str, dict]:
 
 
 def _backup_config(reason: str) -> Optional[str]:
-    if not CONFIG_PATH.exists():
+    if not PATHS.config_file.exists():
         return None
-    CONFIG_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    PATHS.config_backups_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    target = CONFIG_BACKUP_DIR / f"config_{ts}_{reason}.toml"
-    target.write_bytes(CONFIG_PATH.read_bytes())
+    target = PATHS.config_backups_dir / f"config_{ts}_{reason}.toml"
+    target.write_bytes(PATHS.config_file.read_bytes())
 
     # 只保留最新 CONFIG_BACKUP_KEEP 份，旧的自动删掉
     backups = sorted(
-        CONFIG_BACKUP_DIR.glob("config_*.toml"),
+        PATHS.config_backups_dir.glob("config_*.toml"),
         key=lambda p: p.stat().st_mtime,
         reverse=True,
     )
@@ -59,7 +59,7 @@ def _validate_toml_text(text: str) -> dict:
 @router.get("/api/config")
 def get_config() -> dict:
     text, data = _read_config_file()
-    return {"text": text, "data": data, "path": str(CONFIG_PATH)}
+    return {"text": text, "data": data, "path": str(PATHS.config_file)}
 
 
 @router.put("/api/config")
@@ -77,16 +77,16 @@ def put_config(req: ConfigUpdateRequest = Body(...)) -> dict:
         raise HTTPException(400, "需要提供 text 或 data 字段")
 
     backup = _backup_config("save")
-    CONFIG_PATH.write_text(text, encoding="utf-8")
+    PATHS.config_file.write_text(text, encoding="utf-8")
     return {"ok": True, "backup": backup, "text": text, "data": data}
 
 
 @router.get("/api/config/download", response_class=PlainTextResponse)
 def download_config() -> PlainTextResponse:
-    if not CONFIG_PATH.exists():
-        raise HTTPException(404, f"config.toml 不存在：{CONFIG_PATH}")
+    if not PATHS.config_file.exists():
+        raise HTTPException(404, f"config.toml 不存在：{PATHS.config_file}")
     return PlainTextResponse(
-        CONFIG_PATH.read_text(encoding="utf-8"),
+        PATHS.config_file.read_text(encoding="utf-8"),
         media_type="application/toml",
         headers={"Content-Disposition": 'attachment; filename="config.toml"'},
     )

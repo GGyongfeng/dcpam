@@ -23,7 +23,7 @@ import numpy as np
 
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT))
-from dcpam_cv.config import load_config, AppConfig
+from dcpam.config import load_config, AppConfig
 
 
 def _load_projector_module():

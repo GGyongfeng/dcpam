@@ -6,8 +6,8 @@ build-backend = "hatchling.build"
 allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
-# 两个源码根：核心包 dcpam_cv（仓库根）+ 应用后端包 server（dcpam-app 下）
-packages = ["dcpam_cv", "dcpam-app/server"]
+# 两个源码包：核心 dcpam（仓库根）+ 应用层 dcpam_app（含 server/web/desktop）
+packages = ["dcpam", "dcpam_app"]
 
 [project]
 name = "dcpam"
@@ -32,4 +32,4 @@ dependencies = [
 camera = ["PyGObject>=3.50.0"]
 
 [project.scripts]
-dcpam = "server.cli:main"
+dcpam = "dcpam_app.server.cli:main"

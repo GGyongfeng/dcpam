@@ -1,6 +1,6 @@
 # DCPAM-CV 架构概览
 
-本文档简述 `dcpam_cv` 模块的模块划分与数据流，与当前代码实现保持同步。
+本文档简述 `dcpam` 模块的模块划分与数据流，与当前代码实现保持同步。
 更深入的算法、标定、约束分析见同目录其它文档。
 
 
@@ -8,7 +8,7 @@
 
 ```
 dcpam/
-├── dcpam_cv/
+├── dcpam/
 │   ├── path.py                  # 项目根目录路径管理（config.toml、captures/）
 │   ├── config.py                # Pydantic 配置模型 + TOML 加载
 │   ├── defaults.py              # 首次运行时写入默认 config.toml

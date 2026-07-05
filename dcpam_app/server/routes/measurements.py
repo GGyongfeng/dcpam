@@ -17,10 +17,10 @@ from fastapi import APIRouter, Body, HTTPException
 from fastapi.responses import StreamingResponse
 
 from .. import state
-from dcpam_cv.config import SpotExtractionConfig
-from ..constants import CAPTURE_MAX_N, MEASUREMENTS_DIR, _NAME_RE
+from dcpam.config import SpotExtractionConfig
+from ..constants import CAPTURE_MAX_N, PATHS, _NAME_RE
 from ..schemas import CaptureRequest, ExportRequest
-from dcpam_cv.steps.spot_extraction import extract_spots
+from dcpam.steps.spot_extraction import extract_spots
 
 router = APIRouter()
 
@@ -41,10 +41,10 @@ def _sanitize_name(name: str) -> str:
 
 
 def _load_measurements() -> list[dict]:
-    if not MEASUREMENTS_DIR.exists():
+    if not PATHS.measurements_dir.exists():
         return []
     records: list[dict] = []
-    for sub in sorted(MEASUREMENTS_DIR.iterdir()):
+    for sub in sorted(PATHS.measurements_dir.iterdir()):
         if not sub.is_dir():
             continue
         sample_json = sub / "sample.json"
@@ -65,7 +65,7 @@ def capture(req: CaptureRequest = Body(default=CaptureRequest())) -> dict:
     index = max(1, int(req.index or 1))
     record_id = f"{name}-{index:03d}"
 
-    sample_dir = MEASUREMENTS_DIR / record_id
+    sample_dir = PATHS.measurements_dir / record_id
     if sample_dir.exists():
         raise HTTPException(409, f"采样目录已存在：{record_id}")
 
@@ -206,8 +206,8 @@ def delete_measurement(record_id: str) -> dict:
     """删除单个采样目录（连同图片、sample.json 一起清掉）。"""
     if not _ID_RE.match(record_id or ""):
         raise HTTPException(400, "非法的采样 id")
-    base = MEASUREMENTS_DIR.resolve()
-    sub = (MEASUREMENTS_DIR / record_id).resolve()
+    base = PATHS.measurements_dir.resolve()
+    sub = (PATHS.measurements_dir / record_id).resolve()
     try:
         sub.relative_to(base)
     except ValueError:
@@ -229,11 +229,11 @@ def delete_measurement(record_id: str) -> dict:
 def next_index(name: str) -> dict:
     """给定名称，找当前磁盘上最大 index，返回 max+1（用作下次序号的默认值）。"""
     name = _sanitize_name(name)
-    if not MEASUREMENTS_DIR.exists():
+    if not PATHS.measurements_dir.exists():
         return {"name": name, "next_index": 1}
     prefix = f"{name}-"
     max_index = 0
-    for sub in MEASUREMENTS_DIR.iterdir():
+    for sub in PATHS.measurements_dir.iterdir():
         if not sub.is_dir() or not sub.name.startswith(prefix):
             continue
         try:
@@ -252,10 +252,10 @@ def export_measurements_zip(req: ExportRequest = Body(...)) -> StreamingResponse
     """把选中的采样目录整体打包成 zip 下载。"""
     if not req.ids:
         raise HTTPException(400, "请至少选择一个采样")
-    if not MEASUREMENTS_DIR.exists():
+    if not PATHS.measurements_dir.exists():
         raise HTTPException(404, "尚无采样目录")
 
-    base = MEASUREMENTS_DIR.resolve()
+    base = PATHS.measurements_dir.resolve()
     picked: list[tuple[str, Path]] = []
     missing: list[str] = []
     for raw in req.ids:
@@ -263,7 +263,7 @@ def export_measurements_zip(req: ExportRequest = Body(...)) -> StreamingResponse
         if not _ID_RE.match(rid):
             missing.append(rid or "<empty>")
             continue
-        sub = (MEASUREMENTS_DIR / rid).resolve()
+        sub = (PATHS.measurements_dir / rid).resolve()
         try:
             sub.relative_to(base)
         except ValueError:

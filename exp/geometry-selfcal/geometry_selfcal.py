@@ -66,7 +66,7 @@ def load_calibration_transforms(config_path: Path) -> tuple[tuple, tuple]:
 
 
 # ---------------------------------------------------------------------------
-# 前向几何（纯 numpy，与 dcpam_cv pipeline 数学一致）
+# 前向几何（纯 numpy，与 dcpam pipeline 数学一致）
 # ---------------------------------------------------------------------------
 
 def _unit(v: np.ndarray) -> np.ndarray:

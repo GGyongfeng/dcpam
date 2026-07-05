@@ -82,7 +82,7 @@ $$h_t = \mathrm{DCPAM}(I_{C_1}, I_{C_2}, l_T)$$
 
 $$\mathbf{p}_1 = \begin{bmatrix} u_1 \\ v_1 \\ 1 \end{bmatrix}, \quad \mathbf{p}_2 = \begin{bmatrix} u_2 \\ v_2 \\ 1 \end{bmatrix}$$
 
-光斑提取算法（代码 `dcpam_cv/steps/spot_extraction.py` 中的实现）：
+光斑提取算法（代码 `dcpam/steps/spot_extraction.py` 中的实现）：
 - 质心法（centroid method）：亮斑区域的质量中心
 - 高斯拟合（Gaussian fit）：二维高斯函数拟合
 - 改进圆拟合（improved circle fit）：高斯模糊→质心粗定位→Sobel 梯度→Canny 边缘→梯度方向投票→高斯精修
@@ -242,7 +242,7 @@ $$normal^T x + d = 0$$
 
 ```
 dcpam/
-├── dcpam_cv/                     # 核心测量代码
+├── dcpam/                     # 核心测量代码
 │   ├── config.py                # Pydantic 配置模型 + config.toml 加载
 │   ├── defaults.py              # 首次运行写入默认 config.toml
 │   ├── path.py                  # 项目根目录 / config.toml / captures 路径
@@ -272,14 +272,14 @@ dcpam/
 
 ### 核心类和方法
 
-**`DCPAMPipeline`**（`dcpam_cv/pipeline.py`）：设备坐标系 5 步测量流程——光斑提取、反投影到相机系实像面、实像点搬入设备系、设备系镜像、点线距离计算。
+**`DCPAMPipeline`**（`dcpam/pipeline.py`）：设备坐标系 5 步测量流程——光斑提取、反投影到相机系实像面、实像点搬入设备系、设备系镜像、点线距离计算。
 
-**`OpticalGeometry`**（`dcpam_cv/optical_geometry.py`）：
+**`OpticalGeometry`**（`dcpam/optical_geometry.py`）：
 - 从配置构建设备系下的实像面、反射面、探测杆靶点
 - `front_camera_to_device`：等于 `calibration.front_camera_to_frame`（前框系=设备系）
 - `rear_camera_to_device`：等于 `geometry.rear_to_front ∘ calibration.rear_camera_to_frame`
 
-**`DualCamera`**（`dcpam_cv/camera.py`）：
+**`DualCamera`**（`dcpam/camera.py`）：
 - 门面类：按 `sys.platform` 派发 gxipy 或 Aravis 后端
 - `open()` / `close()` / `capture()` / `save()`：统一接口
 - Windows 走大恒 Galaxy SDK（gxipy），其他平台走 Aravis GigE Vision
