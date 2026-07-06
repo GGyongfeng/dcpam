@@ -23,6 +23,15 @@ class ExportRequest(BaseModel):
     ids: list[str]
 
 
+class GroupAssignRequest(BaseModel):
+    ids: list[str]
+    group: str = ""          # 空串 = 移出分组（归为未分组）
+
+
+class GroupCreateRequest(BaseModel):
+    name: str
+
+
 class ConfigUpdateRequest(BaseModel):
     data: Optional[dict] = None
     text: Optional[str] = None

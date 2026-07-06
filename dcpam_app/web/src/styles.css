@@ -1554,8 +1554,12 @@ tbody tr:hover td {
 }
 
 .sample-row {
-  cursor: pointer;
+  cursor: grab;
   transition: background 100ms ease;
+}
+
+.sample-row:active {
+  cursor: grabbing;
 }
 
 .sample-row:hover td {
@@ -1602,6 +1606,111 @@ tbody tr:hover td {
   color: var(--muted);
   text-align: center;
   white-space: normal;
+}
+
+/* 分组头行：整行、可点折叠、可作为拖放落点。
+   注意：td 上不要用 flex（会破坏表格布局），caret/name/count 用 inline 元素。 */
+.group-header {
+  cursor: pointer;
+  user-select: none;
+}
+
+.group-header td {
+  padding: 6px 8px;
+  background: var(--raised);
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.group-header.drop-target td {
+  background: rgba(22, 163, 74, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(22, 163, 74, 0.55);
+}
+
+.group-header-cell {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.group-grip {
+  display: inline-block;
+  margin-right: 4px;
+  color: var(--faint);
+  letter-spacing: -2px;
+  cursor: grab;
+}
+
+.group-header:active .group-grip {
+  cursor: grabbing;
+}
+
+.group-caret {
+  display: inline-block;
+  margin-right: 6px;
+  color: var(--muted);
+  transform: rotate(90deg);
+  transition: transform 120ms ease;
+}
+
+.group-header.collapsed .group-caret {
+  transform: rotate(0deg);
+}
+
+.group-name {
+  margin-right: 6px;
+}
+
+.group-count {
+  font-weight: 400;
+  color: var(--muted);
+}
+
+/* 新建分组输入条：点「+ 新建分组」后出现，回车 / 新建提交，Esc / 取消收起。 */
+.group-assign-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.group-assign-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 12px;
+  font-family: var(--mono);
+  background: var(--bg);
+}
+
+.group-assign-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.group-assign-ok,
+.group-assign-cancel {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 11px;
+  font-family: var(--mono);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.group-assign-ok:hover {
+  background: var(--text);
+  color: var(--bg);
+  border-color: var(--text);
+}
+
+.group-assign-cancel:hover {
+  border-color: var(--accent);
 }
 
 .sample-item-delete {

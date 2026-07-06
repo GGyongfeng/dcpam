@@ -31,6 +31,18 @@ export function MeasurementMode({ mode, setMode }) {
   const [exportSelection, setExportSelection] = useState(() => new Set());
   const [exporting, setExporting] = useState(false);
   const [listStatus, setListStatus] = useState({ kind: "idle", text: "" });
+  const [groups, setGroups] = useState([]);
+
+  const refreshGroups = useCallback(async () => {
+    try {
+      const response = await fetch("/api/measurements/groups");
+      if (!response.ok) return;
+      const data = await response.json();
+      setGroups(Array.isArray(data?.groups) ? data.groups : []);
+    } catch (_) {
+      // 组列表拉取失败不阻塞主流程，静默处理
+    }
+  }, []);
 
   useEffect(() => {
     if (!capturing || captureStartAt == null) return;
@@ -181,10 +193,65 @@ export function MeasurementMode({ mode, setMode }) {
     refreshRecords();
   }, [refreshRecords]);
 
+  const handleAssignGroup = useCallback(async (ids, group) => {
+    const targetIds = [...new Set(ids || [])].filter(Boolean);
+    if (!targetIds.length) return;
+    const label = group ? `「${group}」` : "未分组";
+    setListStatus({ kind: "info", text: `正在把 ${targetIds.length} 个采样归入${label}...` });
+    try {
+      const response = await fetch("/api/measurements/group", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: targetIds, group }),
+      });
+      if (!response.ok) {
+        let detail = `HTTP ${response.status}`;
+        try {
+          const payload = await response.json();
+          detail = payload?.detail || detail;
+        } catch (_) {}
+        throw new Error(detail);
+      }
+      const payload = await response.json().catch(() => null);
+      const updated = payload?.updated?.length ?? targetIds.length;
+      setListStatus({ kind: "ok", text: `已把 ${updated} 个采样归入${label}` });
+    } catch (error) {
+      setListStatus({ kind: "error", text: `分组失败：${error.message}` });
+    }
+    refreshRecords();
+    refreshGroups();
+  }, [refreshRecords, refreshGroups]);
+
+  const handleCreateGroup = useCallback(async (name) => {
+    const groupName = (name || "").trim();
+    if (!groupName) return;
+    setListStatus({ kind: "info", text: `正在新建分组「${groupName}」...` });
+    try {
+      const response = await fetch("/api/measurements/groups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: groupName }),
+      });
+      if (!response.ok) {
+        let detail = `HTTP ${response.status}`;
+        try {
+          const payload = await response.json();
+          detail = payload?.detail || detail;
+        } catch (_) {}
+        throw new Error(detail);
+      }
+      setListStatus({ kind: "ok", text: `已新建分组「${groupName}」，把勾选的采样拖进去即可` });
+    } catch (error) {
+      setListStatus({ kind: "error", text: `新建分组失败：${error.message}` });
+    }
+    refreshGroups();
+  }, [refreshGroups]);
+
   useEffect(() => {
     refreshRecords();
     refreshHealth();
-  }, [refreshRecords, refreshHealth]);
+    refreshGroups();
+  }, [refreshRecords, refreshHealth, refreshGroups]);
 
   useEffect(() => {
     if (capturing) return;
@@ -341,6 +408,9 @@ export function MeasurementMode({ mode, setMode }) {
           onExportZip={handleExportZip}
           exporting={exporting}
           onDeleteRecords={handleDeleteRecords}
+          onAssignGroup={handleAssignGroup}
+          onCreateGroup={handleCreateGroup}
+          groups={groups}
           listStatus={listStatus}
         />
       }

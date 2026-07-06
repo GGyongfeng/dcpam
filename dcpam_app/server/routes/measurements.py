@@ -19,7 +19,7 @@ from fastapi.responses import StreamingResponse
 from .. import state
 from dcpam.config import SpotExtractionConfig
 from ..constants import CAPTURE_MAX_N, PATHS, _NAME_RE
-from ..schemas import CaptureRequest, ExportRequest
+from ..schemas import CaptureRequest, ExportRequest, GroupAssignRequest, GroupCreateRequest
 from dcpam.steps.spot_extraction import extract_spots
 
 router = APIRouter()
@@ -56,6 +56,40 @@ def _load_measurements() -> list[dict]:
             continue
     records.sort(key=lambda r: r.get("ts", ""))
     return records
+
+
+def _groups_file() -> Path:
+    """空分组名单独存在 measurements/groups.json（一个字符串数组）。
+
+    组名本来寄生在成员的 sample.json 里；空组没有成员，需要这份清单才能持久保留。
+    """
+    return PATHS.measurements_dir / "groups.json"
+
+
+def _load_group_names() -> list[str]:
+    path = _groups_file()
+    if not path.exists():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return []
+    if not isinstance(data, list):
+        return []
+    return [str(g).strip() for g in data if str(g).strip()]
+
+
+def _save_group_names(names: list[str]) -> None:
+    PATHS.measurements_dir.mkdir(parents=True, exist_ok=True)
+    seen: list[str] = []
+    for name in names:
+        name = (name or "").strip()
+        if name and name not in seen:
+            seen.append(name)
+    _groups_file().write_text(
+        json.dumps(seen, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
 
 
 @router.post("/api/capture")
@@ -244,6 +278,93 @@ def next_index(name: str) -> dict:
 
 
 _ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}-\d{1,6}$")
+
+
+def _sanitize_group(group: str) -> str:
+    """组名比采样名宽松：允许中文/空格等任意可见字符，仅裁剪首尾空白 + 限长。
+
+    空串合法，表示把采样移出分组（归为「未分组」）。
+    """
+    group = (group or "").strip()
+    if len(group) > 64:
+        raise HTTPException(400, "组名长度不能超过 64")
+    return group
+
+
+@router.post("/api/measurements/group")
+def assign_group(req: GroupAssignRequest = Body(...)) -> dict:
+    """把选中的采样批量归入某个组（写入各自 sample.json 的 group 字段）。
+
+    group 为空串时表示移出分组。组名与采样名 name 相互独立。
+    """
+    group = _sanitize_group(req.group)
+    if not req.ids:
+        raise HTTPException(400, "请至少选择一个采样")
+
+    base = PATHS.measurements_dir.resolve()
+    updated: list[str] = []
+    failed: list[str] = []
+    for raw in req.ids:
+        rid = (raw or "").strip()
+        if not _ID_RE.match(rid):
+            failed.append(rid or "<empty>")
+            continue
+        sub = (PATHS.measurements_dir / rid).resolve()
+        try:
+            sub.relative_to(base)
+        except ValueError:
+            failed.append(rid)
+            continue
+        sample_json = sub / "sample.json"
+        if not sample_json.exists():
+            failed.append(rid)
+            continue
+        try:
+            record = json.loads(sample_json.read_text(encoding="utf-8"))
+            record["group"] = group
+            sample_json.write_text(
+                json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            updated.append(rid)
+        except (json.JSONDecodeError, OSError) as exc:
+            failed.append(f"{rid}:{state._describe(exc)}")
+
+    if not updated and failed:
+        raise HTTPException(404, f"分组失败：{', '.join(failed[:5])}")
+
+    # 归入非空组时，把组名登记进 groups.json（幂等），保证组一直可见。
+    if group and updated:
+        names = _load_group_names()
+        if group not in names:
+            names.append(group)
+            _save_group_names(names)
+
+    return {"ok": True, "group": group, "updated": updated, "failed": failed}
+
+
+@router.get("/api/measurements/groups")
+def list_groups() -> dict:
+    """返回全部已知组名：groups.json 里登记的 ∪ 各采样 group 字段出现过的。"""
+    names = list(_load_group_names())
+    for record in _load_measurements():
+        g = (record.get("group") or "").strip()
+        if g and g not in names:
+            names.append(g)
+    names.sort(key=str.lower)
+    return {"groups": names}
+
+
+@router.post("/api/measurements/groups")
+def create_group(req: GroupCreateRequest = Body(...)) -> dict:
+    """新建一个（可能为空的）分组，仅把组名登记进 groups.json。"""
+    name = _sanitize_group(req.name)
+    if not name:
+        raise HTTPException(400, "组名不能为空")
+    names = _load_group_names()
+    if name not in names:
+        names.append(name)
+        _save_group_names(names)
+    return {"ok": True, "name": name}
 
 
 @router.post("/api/measurements/export-zip")
