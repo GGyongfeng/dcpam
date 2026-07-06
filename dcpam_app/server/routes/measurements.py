@@ -133,12 +133,8 @@ def capture(req: CaptureRequest = Body(default=CaptureRequest())) -> dict:
     valid_front = np.array([f["front_uv"] for f in frames if f["front_uv"] is not None])
     valid_rear = np.array([f["rear_uv"] for f in frames if f["rear_uv"] is not None])
 
-    if valid_front.size == 0 or valid_rear.size == 0:
-        # 提取全失败：留下图但删空 record dir
-        raise HTTPException(
-            500,
-            "圆心提取全部失败：\n" + "\n".join(extraction_errors[:5]),
-        )
+    # 只要图已落盘，就必写 sample.json 并返回成功：圆心提取（pipeline）出错
+    # 不影响本次采样记录的留存，交由前端按 valid_n / extraction_errors 呈现。
 
     # 聚合各帧 confidence（min / mean），方便前端一眼判断这次采样质量
     def _agg_confidence(side: str) -> dict:
@@ -151,7 +147,10 @@ def capture(req: CaptureRequest = Body(default=CaptureRequest())) -> dict:
     front_conf = _agg_confidence("front")
     rear_conf = _agg_confidence("rear")
 
-    def _mean_std(arr: np.ndarray) -> tuple[list[float], list[float]]:
+    def _mean_std(arr: np.ndarray) -> tuple[Optional[list[float]], Optional[list[float]]]:
+        # 无有效帧（提取全失败）→ 均值/标准差留空，前端据此显示"无有效帧"
+        if arr.size == 0:
+            return None, None
         mean = arr.mean(axis=0).tolist()
         std = arr.std(axis=0).tolist() if arr.shape[0] > 1 else [0.0, 0.0]
         return mean, std

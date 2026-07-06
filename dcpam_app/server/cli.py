@@ -11,6 +11,7 @@ from pathlib import Path
 
 from dcpam.path import DCPAMPaths
 from dcpam.pipeline import console
+from . import net
 from .startup import print_health_report
 
 DEFAULT_HOST = "127.0.0.1"
@@ -40,8 +41,27 @@ def _ensure_aravis_libs() -> None:
         os.execv(sys.argv[0], sys.argv)
 
 
-def _start_backend(host: str, port: int) -> threading.Thread:
-    """在后台线程跑 uvicorn。"""
+def _reload_enabled() -> bool:
+    """默认开启后端热更新；DCPAM_NO_RELOAD=1 可关闭。"""
+    return os.environ.get("DCPAM_NO_RELOAD") != "1"
+
+
+def _start_backend(host: str, port: int) -> subprocess.Popen | None:
+    """启动 uvicorn 后端。
+
+    默认（热更新）：作为独立子进程跑，开启 --reload —— reloader 需要独占主线程/
+    进程，无法在线程里跑，故走子进程。返回该子进程供退出时清理。
+    DCPAM_NO_RELOAD=1：在后台守护线程里跑（随主进程退出而结束），不热更。
+    """
+    if _reload_enabled():
+        env = {**os.environ, "DCPAM_HOST": host, "DCPAM_PORT": str(port)}
+        kwargs = {"env": env}
+        if sys.platform == "win32":
+            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        else:
+            kwargs["start_new_session"] = True
+        return subprocess.Popen([sys.executable, "-m", "dcpam_app.server.app"], **kwargs)
+
     from .app import run as run_server
 
     thread = threading.Thread(
@@ -51,7 +71,7 @@ def _start_backend(host: str, port: int) -> threading.Thread:
         daemon=True,
     )
     thread.start()
-    return thread
+    return None
 
 
 def _start_frontend() -> subprocess.Popen:
@@ -128,30 +148,71 @@ def _terminate_process_group(proc: subprocess.Popen, timeout: float = 8.0) -> No
         pass
 
 
-_CAMERA_HOST_IP = "192.168.0.1"
-_CAMERA_NETMASK = "255.255.255.0"
+_CAMERA_HOST_IP = net.CAMERA_HOST_IP
+_CAMERA_NETMASK = net.CAMERA_NETMASK
+
+# 免密 sudo 规则文件（仅放开配置/清理相机网卡这两条命令）。
+# 装一次后，启动/重连配网卡、清理冲突网卡都不再要密码。
+# 仅 macOS 需要；Windows 走 Galaxy SDK 不涉及。
+_SUDOERS_FILE = "/etc/sudoers.d/dcpam-camera-net"
+# 两行规则：① 把 en 网口配成 192.168.0.1；② 摘掉 en 网口上的 192.168.0.1（清理抢路由的残留网卡）。
+_SUDOERS_RULES = (
+    "%s ALL=(root) NOPASSWD: /sbin/ifconfig en[0-9]* 192.168.0.1 netmask 255.255.255.0 up",
+    "%s ALL=(root) NOPASSWD: /sbin/ifconfig en[0-9]* -alias 192.168.0.1",
+)
+
+
+def _sudoers_setup_command() -> str:
+    """返回一次性安装免密规则的完整命令（供提示用户手动执行）。"""
+    import getpass
+
+    user = getpass.getuser()
+    rules = "\\n".join(rule % user for rule in _SUDOERS_RULES)
+    return (
+        f"printf '{rules}\\n' | sudo tee {_SUDOERS_FILE} > /dev/null "
+        f"&& sudo chmod 440 {_SUDOERS_FILE} "
+        f"&& sudo visudo -c -f {_SUDOERS_FILE}"
+    )
+
+
+def _print_sudoers_setup_hint() -> None:
+    """提示用户一次性安装免密规则，之后配网卡不再要密码。"""
+    console.print(
+        "  [yellow]•[/] 配置相机网卡需要 sudo。执行下面这条命令[bold]一次[/]（输一次密码），"
+        "之后启动/重连都免密：\n"
+    )
+    console.print(f"      [cyan]{_sudoers_setup_command()}[/]\n")
+    console.print("  [dim]  看到 “parsed OK” 即成功。仅放开配置/清理相机网卡这两条命令，其它 sudo 不受影响。[/]")
+
+
+def _configure_camera_ip_nopasswd(iface: str) -> bool:
+    """把网口配成相机 IP。配之前先清掉其它网卡上的同网段残留（防抢路由）。
+
+    成功返回 True；未装免密规则返回 False。清理失败不 fatal（打印提示后继续配）。
+    """
+    for conflict in net.find_conflicting_interfaces(iface):
+        if net.clear_conflicting_ip(conflict):
+            console.print(f"  [green]•[/] 已清理冲突网卡 [bold]{conflict}[/] 上的 {_CAMERA_HOST_IP}")
+        else:
+            console.print(
+                f"  [yellow]•[/] 网卡 [bold]{conflict}[/] 也配了 {_CAMERA_HOST_IP} 会抢路由，"
+                f"但免密清理失败，可手动：sudo ifconfig {conflict} -alias {_CAMERA_HOST_IP}"
+            )
+    return net.configure_camera_ip(iface)
 
 
 def _find_camera_interface() -> str | None:
     """macOS: 找一个活跃的千兆以太网接口用于配置 192.168.0.1。"""
-    if sys.platform != "darwin":
-        return None
-    try:
-        result = subprocess.run(["ifconfig"], capture_output=True, text=True, check=False)
-    except FileNotFoundError:
-        return None
+    return net.find_camera_interface()
 
-    current_iface: str | None = None
-    is_gigabit = False
-    for line in result.stdout.splitlines():
-        if not line.startswith("\t") and ":" in line:
-            current_iface = line.split(":")[0]
-            is_gigabit = False
-        if current_iface and "1000baseT" in line:
-            is_gigabit = True
-        if current_iface and is_gigabit and "status: active" in line:
-            return current_iface
-    return None
+
+def _report_route_verification(iface: str) -> None:
+    """配完 IP 后校验直连路由指向；异常打印明确告警。"""
+    result = net.verify_camera_route(iface)
+    if result["ok"]:
+        console.print(f"  [green]•[/] {result['message']}")
+    else:
+        console.print(f"  [bold red]✗[/] {result['message']}")
 
 
 def _run_net_command() -> int:
@@ -168,28 +229,24 @@ def _run_net_command() -> int:
         console.print(f"      sudo ifconfig <interface> {_CAMERA_HOST_IP} netmask {_CAMERA_NETMASK} up")
         return 1
 
-    cmd = ["sudo", "ifconfig", iface, _CAMERA_HOST_IP, "netmask", _CAMERA_NETMASK, "up"]
     console.print(f"  [green]•[/] 检测到千兆接口：[bold]{iface}[/]")
-    console.print(f"  [dim]执行：{' '.join(cmd)}[/]")
-    console.print("  [dim]（需要输入 sudo 密码）[/]")
-    try:
-        result = subprocess.run(cmd, check=False)
-    except KeyboardInterrupt:
-        console.print("\n  [yellow]已取消[/]")
-        return 1
-    if result.returncode == 0:
+    if _configure_camera_ip_nopasswd(iface):
         console.print(f"  [bold green]✓[/] 已配置 {iface} = {_CAMERA_HOST_IP}")
-    else:
-        console.print(f"  [bold red]✗[/] 配置失败（退出码 {result.returncode}）")
-    return result.returncode
+        _report_route_verification(iface)
+        return 0
+
+    # 免密规则尚未安装：提示一次性安装，不再交互式要密码
+    console.print("  [bold red]✗[/] 配置失败：尚未安装免密规则。")
+    _print_sudoers_setup_hint()
+    return 1
 
 
 def _startup_configure_net() -> None:
-    """启动时先尝试 sudo 配 IP。目的双重：
-    1) 让 IP 一定处于正确状态（不管之前有没有配过）
-    2) 让 sudo 密码缓存到当前 shell，后续重连时可无密码重配
+    """启动时用免密 sudo 配相机 IP。
 
-    用户不输密码 / Ctrl+C 时不阻塞，正常启动 web。
+    已装免密规则（见 _SUDOERS_FILE）→ 静默配好，无需密码；
+    未装 → 打印一次性安装提示，不阻塞、正常启动 web。
+    Windows 不涉及（走 Galaxy SDK，无需配 192.168.0.1）。
     """
     if sys.platform != "darwin":
         return
@@ -202,16 +259,13 @@ def _startup_configure_net() -> None:
         )
         return
 
-    cmd = ["sudo", "ifconfig", iface, _CAMERA_HOST_IP, "netmask", _CAMERA_NETMASK, "up"]
-    console.print(f"  [green]•[/] 配置网卡 [bold]{iface}[/] = {_CAMERA_HOST_IP}")
-    console.print("  [dim]  （回车跳过则不配置，后续可 uv run dcpam net 手动配置）[/]")
-    try:
-        result = subprocess.run(cmd, check=False)
-    except KeyboardInterrupt:
-        console.print("\n  [yellow]  跳过网卡配置[/]")
+    if _configure_camera_ip_nopasswd(iface):
+        console.print(f"  [green]•[/] 已配置网卡 [bold]{iface}[/] = {_CAMERA_HOST_IP}")
+        _report_route_verification(iface)
         return
-    if result.returncode != 0:
-        console.print(f"  [yellow]  网卡配置未完成（退出码 {result.returncode}），继续启动 web[/]")
+
+    # 免密规则尚未安装：提示用户一次性安装
+    _print_sudoers_setup_hint()
 
 
 def main() -> None:
@@ -240,17 +294,26 @@ def main() -> None:
     port = int(os.environ.get("DCPAM_PORT", DEFAULT_PORT))
 
     console.print(f"  [green]API[/]  http://{host}:{port}")
-    _start_backend(host=host, port=port)
+    if _reload_enabled():
+        console.print("  [dim]后端热更新已开启（改 .py 自动重启）；DCPAM_NO_RELOAD=1 可关闭[/]")
+    backend = _start_backend(host=host, port=port)
     time.sleep(0.4)  # 让 uvicorn 抢先打印 banner
 
     try:
         frontend = _start_frontend()
     except RuntimeError as exc:
         console.print(f"  [bold red]✗[/] {exc}")
+        if backend is not None:
+            _terminate_process_group(backend)
         sys.exit(1)
 
-    def _on_terminal_signal(signum, _frame):
+    def _shutdown() -> None:
         _terminate_process_group(frontend)
+        if backend is not None:
+            _terminate_process_group(backend)
+
+    def _on_terminal_signal(signum, _frame):
+        _shutdown()
         sys.exit(128 + signum)
 
     if hasattr(signal, "SIGHUP"):
@@ -262,4 +325,4 @@ def main() -> None:
         frontend.wait()
     except KeyboardInterrupt:
         console.print("\n  [dim]正在关闭...[/]")
-        _terminate_process_group(frontend)
+        _shutdown()

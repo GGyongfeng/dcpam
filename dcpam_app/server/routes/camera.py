@@ -1,16 +1,20 @@
 """DCPAM Web 后端：相机健康与重连路由。"""
 from __future__ import annotations
 
-import subprocess
-import sys
 from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 
-from .. import state
+from .. import net, state
 
 router = APIRouter()
+
+
+def _log(message: str) -> None:
+    """打一行带时间戳的日志到 server stdout（与 _log_health_change 同风格）。"""
+    ts = datetime.now().strftime("%H:%M:%S")
+    print(f"[{ts}] {message}", flush=True)
 
 
 # ---------------------------------------------------------------------------
@@ -76,17 +80,31 @@ def _probe_capture() -> None:
 
 @router.post("/api/camera/reconnect")
 def camera_reconnect() -> dict:
-    # 先尝试无密码 sudo 重配 IP（利用启动时缓存的 sudo credentials）。
-    # 失败不 fatal，因为掉线可能不是 IP 问题；返回值里带 sudo_status 让前端提示。
+    _log("收到重连请求")
+    # 先尝试免密 sudo 重配 IP（配前会清掉抢路由的残留网卡）。
+    # 失败不 fatal，因为掉线可能不是 IP 问题；返回值里带 net 状态让前端提示。
     net_status = _reconfigure_camera_ip()
+    if net_status["status"] == "ok":
+        _log(f"配置网卡 {net_status.get('interface')} = {net.CAMERA_HOST_IP}")
+        route = net_status.get("route") or {}
+        if route.get("ok"):
+            _log(f"直连路由 → {route.get('route_iface')}（正常）")
+        elif route:
+            _log(f"路由异常：{route.get('message')}")
+    elif net_status["status"] == "nopasswd_missing":
+        _log("免密规则未安装，跳过配网卡")
+    elif net_status["status"] == "no_interface":
+        _log("未检测到千兆以太网接口，跳过配网卡")
 
     state._close_camera()
     state._reset_camera_error()
     try:
         state._get_camera()
     except Exception as exc:
+        msg = state._describe(exc)
+        _log(f"重连失败：{msg}")
         detail = {
-            "message": f"相机连接失败:{state._describe(exc)}",
+            "message": f"相机连接失败:{msg}",
             "net": net_status,
         }
         raise HTTPException(503, detail) from exc
@@ -94,58 +112,46 @@ def camera_reconnect() -> dict:
     try:
         _probe_capture()
     except Exception as exc:
+        msg = state._describe(exc)
+        _log(f"重连失败：{msg}")
         detail = {
-            "message": f"相机断线:{state._describe(exc)}",
+            "message": f"相机断线:{msg}",
             "net": net_status,
         }
         raise HTTPException(503, detail) from exc
+    _log("相机已重连")
     return {"camera": "ok", "net": net_status}
 
 
-def _find_camera_interface() -> Optional[str]:
-    """扫描 ifconfig 找活跃的千兆以太网接口。"""
-    if sys.platform != "darwin":
-        return None
-    try:
-        result = subprocess.run(["ifconfig"], capture_output=True, text=True, check=False)
-    except FileNotFoundError:
-        return None
-    current_iface: Optional[str] = None
-    is_gigabit = False
-    for line in result.stdout.splitlines():
-        if not line.startswith("\t") and ":" in line:
-            current_iface = line.split(":")[0]
-            is_gigabit = False
-        if current_iface and "1000baseT" in line:
-            is_gigabit = True
-        if current_iface and is_gigabit and "status: active" in line:
-            return current_iface
-    return None
-
-
 def _reconfigure_camera_ip() -> dict:
-    """尝试无密码 sudo 重配 IP。
-    返回 {status, interface?, message?}：
-      status = "ok" | "no_interface" | "sudo_expired" | "not_darwin" | "error"
+    """用免密 sudo（-n）重配相机 IP：先清冲突网卡，再配相机网卡，最后校验路由。
+
+    返回 {status, interface?, route?, message?}：
+      status = "ok" | "no_interface" | "nopasswd_missing" | "not_darwin" | "error"
+
+    需要预先安装免密规则（/etc/sudoers.d/dcpam-camera-net），装一次后永久免密。
     """
+    import sys
+
     if sys.platform != "darwin":
         return {"status": "not_darwin"}
-    iface = _find_camera_interface()
+    iface = net.find_camera_interface()
     if not iface:
         return {"status": "no_interface", "message": "未检测到千兆以太网接口，请检查网线"}
 
-    cmd = ["sudo", "-n", "ifconfig", iface, "192.168.0.1", "netmask", "255.255.255.0", "up"]
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=5)
-    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
-        return {"status": "error", "message": state._describe(exc)}
-    if result.returncode == 0:
-        return {"status": "ok", "interface": iface}
-    stderr = result.stderr.strip()
-    if "password is required" in stderr or "a password is required" in stderr:
+    # 配前清掉其它网卡上的同网段残留（防抢路由），失败不致命。
+    for conflict in net.find_conflicting_interfaces(iface):
+        if net.clear_conflicting_ip(conflict):
+            _log(f"清理冲突网卡 {conflict} 上的 {net.CAMERA_HOST_IP}")
+        else:
+            _log(f"网卡 {conflict} 抢占 {net.CAMERA_HOST_IP} 但免密清理失败，请手动清理")
+
+    if not net.configure_camera_ip(iface):
         return {
-            "status": "sudo_expired",
+            "status": "nopasswd_missing",
             "interface": iface,
-            "message": "sudo 密码已过期，请在启动 dcpam 的终端执行 `sudo -v` 后再点重连",
+            "message": "未安装免密规则，请在启动 dcpam 的终端按提示执行一次性安装命令后重试",
         }
-    return {"status": "error", "interface": iface, "message": stderr or f"exit {result.returncode}"}
+
+    route = net.verify_camera_route(iface)
+    return {"status": "ok", "interface": iface, "route": route}

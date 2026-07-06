@@ -1,6 +1,6 @@
 """DCPAM Web 后端：跨模块共享的非路径常量。
 
-所有路径统一由 dcpam.path.DCPAMPaths 提供（PATHS.data_dir / measurements_dir /
+所有路径统一由 dcpam.path.DCPAMPaths 提供（PATHS.measurements_dir /
 config_file / config_backups_dir 等），不在此处另立路径别名。
 """
 from __future__ import annotations

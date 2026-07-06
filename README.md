@@ -13,79 +13,141 @@ The current repository mainly contains a classical computer vision workflow for 
 - Visualize the 3D geometry, distance distribution, and sensitivity contribution
 - Capture synchronized image pairs from two Daheng GigE Vision cameras
 
-## Installation
+## Quick start (macOS)
 
-Clone the repository and install the Python dependencies with `uv`:
+Complete flow to get the web UI running from scratch. For Windows see [Windows notes](#windows-notes).
+
+### 1. Clone and install dependencies
 
 ```bash
 git clone https://github.com/GGyongfeng/dcpam.git
 cd dcpam
-uv sync
+uv sync                          # Python dependencies
+npm --prefix dcpam_app/web install   # frontend dependencies (required first run)
 ```
 
-全局安装（可在任意目录使用 `dcpam` 命令）：
+This installs everything needed for the web UI (analysis mode). **If you only need
+analysis without a camera, stop here** and skip to step 4.
+
+> Requires [uv](https://docs.astral.sh/uv/) and [Node.js](https://nodejs.org/) (with npm) installed.
+
+### 2. Install camera dependencies (only for capture / live preview)
+
+Camera capture is built on [Aravis](https://github.com/AravisProject/aravis) (open-source
+GigE Vision library). Install the system C libraries first, then the Python binding:
 
 ```bash
-uv tool install -e '.[camera]'
-```
-
-### macOS 额外依赖
-
-相机采集基于 [Aravis](https://github.com/AravisProject/aravis)（开源 GigE Vision 库），macOS 上需要：
-
-```bash
+# 1) system C libraries (brew)
 brew install aravis pygobject3 libffi
-PKG_CONFIG_PATH="/opt/homebrew/opt/libffi/lib/pkgconfig" uv pip install PyGObject
+
+# 2) Python binding into the project .venv (camera is an optional extra)
+PKG_CONFIG_PATH="/opt/homebrew/opt/libffi/lib/pkgconfig" uv sync --extra camera
 ```
 
-### 网络配置
+> Order matters: PyGObject links against libffi at build time, so brew must run first.
+> `PKG_CONFIG_PATH` tells the compiler where libffi lives; omitting it fails the build.
+>
+> ⚠️ After installing camera deps, **always sync with `--extra camera`** (`uv sync --extra camera`).
+> A bare `uv sync` removes PyGObject as an "unused" package.
 
-GigE Vision 相机通过网口通信，需要确保 Mac 与相机在同一子网。
-如果相机 IP 为 `192.168.0.x`，给连接相机的网口配置静态 IP：
+Verify the camera deps loaded (Aravis importable):
 
 ```bash
-# 查看哪个网口连接了相机（找 status: active 的以太网口）
-ifconfig | grep -B5 "status: active"
-
-# 配置静态 IP（将 en6 替换为你的实际网口）
-sudo ifconfig en6 192.168.0.1 netmask 255.255.255.0 up
+DYLD_FALLBACK_LIBRARY_PATH="/opt/homebrew/lib" \
+  uv run python -c "import gi; gi.require_version('Aravis','0.8'); from gi.repository import Aravis; print('Aravis OK')"
 ```
 
-## Usage
+Printing `Aravis OK` means success. `DYLD_FALLBACK_LIBRARY_PATH` lets Python find the Aravis
+shared library; `uv run dcpam` sets it automatically, so normal use needs no manual export.
 
-### 相机测量
+### 3. Configure passwordless camera-NIC setup (one time)
 
-交互模式（ENTER 拍照+测量，Q 退出）：
+GigE Vision cameras talk over Ethernet, so macOS must set the camera-facing NIC to
+`192.168.0.1`. That needs `sudo`. To avoid typing a password every reconnect, install a
+**one-time NOPASSWD rule** — afterwards startup / reconnect configure the NIC automatically:
+
+```bash
+printf '%s ALL=(root) NOPASSWD: /sbin/ifconfig en[0-9]* 192.168.0.1 netmask 255.255.255.0 up\n%s ALL=(root) NOPASSWD: /sbin/ifconfig en[0-9]* -alias 192.168.0.1\n' "$(whoami)" "$(whoami)" \
+  | sudo tee /etc/sudoers.d/dcpam-camera-net > /dev/null \
+  && sudo chmod 440 /etc/sudoers.d/dcpam-camera-net \
+  && sudo visudo -c -f /etc/sudoers.d/dcpam-camera-net
+```
+
+Enter your password once; `parsed OK` means success. The rule permits only two commands:
+configure `en*` to `192.168.0.1`, and remove that address (`-alias`, used to auto-clear a
+stale NIC on the same subnet that would otherwise steal the route). All other sudo is
+unaffected. Remove it with `sudo rm /etc/sudoers.d/dcpam-camera-net`.
+
+> Skipping this rule still works — `dcpam` prints this install command as a reminder on startup.
+
+### 4. Start the web UI
 
 ```bash
 uv run dcpam
 ```
 
-单次拍照后退出：
+This launches both the **FastAPI backend** (`http://127.0.0.1:8011`) and the **Vite
+frontend**. Open the frontend URL (default `http://127.0.0.1:5173/`). `Ctrl+C` stops both.
 
-```bash
-uv run dcpam -o
+On startup it runs health checks (OS / camera SDK / NIC / config.toml). **Analysis mode
+works without a camera**; measurement mode (capture / preview) needs one.
+
+### 5. Capture and measure
+
+1. Connect the network cable (camera ↔ Mac);
+2. Switch to **measurement mode** in the frontend;
+3. Click **⚡** — it auto-configures the NIC (passwordless) and connects the camera;
+4. Click "capture + measure" to burst N frames, average, and write to history.
+
+Day-to-day it is just: **plug cable → click the bolt → capture** — no backend restart, no password.
+
+> Even if spot extraction fails, as long as images were captured a record is still written
+> and shown in history, and the index auto-increments.
+
+## Runtime data directory
+
+Runtime config and data live under `~/.dcpam/` (shared across projects, not in the repo):
+
+```
+~/.dcpam/
+├── config.toml          # device geometry / calibration
+├── pnp.toml             # PnP circle conventions
+├── measurements/        # one subdir per capture (images + sample.json)
+├── config_backups/      # automatic backups of config.toml
+└── captures/            # single-shot debug frames
 ```
 
-仅拍照，跳过测量：
+The repo root only keeps **templates** of `config.toml` / `pnp.toml` for first-time reference.
+
+## Common commands and switches
 
 ```bash
-uv run dcpam -o -c
+uv run dcpam                     # start backend + frontend (backend hot-reload on by default)
+uv run dcpam net                 # configure the camera NIC only (passwordless)
+uv run python scripts/run_analysis.py   # precision analysis script
+
+DCPAM_NO_RELOAD=1 uv run dcpam   # disable backend hot-reload
+DCPAM_HOST=0.0.0.0 DCPAM_PORT=9000 uv run dcpam   # custom backend host/port
 ```
 
-Mock 模式（从项目 `mock/` 加载图片，无需相机）：
+- **Hot-reload**: `uv run dcpam` enables backend hot-reload by default (editing `.py`
+  auto-restarts); the frontend already has HMR. Disable with `DCPAM_NO_RELOAD=1`.
+- **Global install** (use `dcpam` from any directory): `uv tool install -e '.[camera]'`
+
+Optional debug scripts:
 
 ```bash
-uv run dcpam -m
+uv run python scripts/check_camera_env.py   # self-check SDK / camera reachability
+uv run python scripts/capture_once.py       # grab one frame pair to ~/.dcpam/pictures/
 ```
 
-数据保存到项目 `captures/{uid}/`，包含 `front.png`、`rear.png`、`result.json`。
+## Windows notes
 
-### 精度分析
+Windows uses the Daheng Galaxy SDK and does **not** need Aravis / sudo NIC setup:
 
-```bash
-uv run python scripts/run_analysis.py
-```
+- Install the Daheng Galaxy SDK (with its Python samples; looked up at `D:/Camera_Galaxy/GalaxySDK`)
+- After `uv sync`, run `uv run dcpam`
+- Set the NIC to the `192.168.0.x` subnet via Windows network settings
 
 ## Repository Layout
 

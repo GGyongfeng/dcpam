@@ -29,11 +29,28 @@ app.include_router(config.router)
 # Runner
 # ---------------------------------------------------------------------------
 
-def run(host: str = "127.0.0.1", port: int = 8011) -> None:
+def run(host: str = "127.0.0.1", port: int = 8011, reload: bool = False) -> None:
     import uvicorn
 
-    uvicorn.run(app, host=host, port=port, log_level="warning")
+    if reload:
+        # reload 需要 import 字符串（reloader 会重新导入 app），且必须在主线程运行
+        uvicorn.run(
+            "dcpam_app.server.app:app",
+            host=host,
+            port=port,
+            log_level="warning",
+            reload=True,
+            reload_dirs=["dcpam_app", "dcpam"],
+        )
+    else:
+        uvicorn.run(app, host=host, port=port, log_level="warning")
 
 
 if __name__ == "__main__":
-    run()
+    import os
+
+    run(
+        host=os.environ.get("DCPAM_HOST", "127.0.0.1"),
+        port=int(os.environ.get("DCPAM_PORT", "8011")),
+        reload=os.environ.get("DCPAM_NO_RELOAD") != "1",
+    )
