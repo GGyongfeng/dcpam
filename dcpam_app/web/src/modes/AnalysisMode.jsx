@@ -198,6 +198,24 @@ export function AnalysisMode({ mode, setMode, mainPanel, setMainPanel, tomlConfi
   }, [tomlConfig]);
   const geometry = geometryState.geometry;
 
+  // 为历史表格「计算结果」列预算好每条记录的距离（需要几何 + config）。
+  const resultsById = useMemo(() => {
+    if (!geometry || !tomlConfig) return {};
+    const out = {};
+    for (const record of orderedRecords) {
+      const agg = aggregateDistance(record, geometry, tomlConfig);
+      if (agg && agg.nUsed > 0 && Number.isFinite(agg.distanceMean)) {
+        out[record.id] = {
+          distanceMean: agg.distanceMean,
+          distanceStd: agg.distanceStd,
+          nUsed: agg.nUsed,
+          nTotal: agg.nTotal,
+        };
+      }
+    }
+    return out;
+  }, [orderedRecords, geometry, tomlConfig]);
+
   const measurementRow = useMemo(() => recordToMeasurementRow(selectedRecord), [selectedRecord]);
   const aggregate = useMemo(
     () => aggregateDistance(selectedRecord, geometry, tomlConfig),
@@ -247,6 +265,7 @@ export function AnalysisMode({ mode, setMode, mainPanel, setMainPanel, tomlConfi
           exporting={exporting}
           onDeleteRecords={handleDeleteRecords}
           listStatus={listStatus}
+          resultsById={resultsById}
         />
       }
       sceneSlot={

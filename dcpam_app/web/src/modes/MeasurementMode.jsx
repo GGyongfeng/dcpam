@@ -22,6 +22,7 @@ export function MeasurementMode({ mode, setMode }) {
   const [filter, setFilter] = useState("");
   const [loading, setLoading] = useState(false);
   const [capturing, setCapturing] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
   const [status, setStatus] = useState({ kind: "idle", text: "" });
   const [cameraHealth, setCameraHealth] = useState({ ok: null, message: "" });
   const [captureElapsedMs, setCaptureElapsedMs] = useState(null);
@@ -256,10 +257,19 @@ export function MeasurementMode({ mode, setMode }) {
       }
       const elapsed = Date.now() - startAt;
       setCaptureElapsedMs(elapsed);
-      setStatus({
-        kind: "ok",
-        text: `已采样 ${payload.id}（${payload.valid_n}/${payload.n} 帧，用时 ${formatElapsed(elapsed)}）`,
-      });
+      if (payload.valid_n === 0) {
+        // 图已留存、记录已生成，但圆心提取全失败 —— 提醒但不算失败
+        const firstErr = payload.extraction_errors?.[0] || "圆心提取失败";
+        setStatus({
+          kind: "error",
+          text: `已保存 ${payload.id}，但提取失败（0/${payload.n} 帧）：${firstErr}`,
+        });
+      } else {
+        setStatus({
+          kind: "ok",
+          text: `已采样 ${payload.id}（${payload.valid_n}/${payload.n} 帧，用时 ${formatElapsed(elapsed)}）`,
+        });
+      }
       setRecords((current) => [...current, payload]);
       setSelectedId(payload.id);
       setSampleIndex(index + 1);
@@ -274,6 +284,8 @@ export function MeasurementMode({ mode, setMode }) {
   };
 
   const reconnectCamera = async () => {
+    if (reconnecting) return;
+    setReconnecting(true);
     setStatus({ kind: "info", text: "重新连接相机..." });
     try {
       const response = await fetch("/api/camera/reconnect", { method: "POST" });
@@ -291,6 +303,20 @@ export function MeasurementMode({ mode, setMode }) {
     } catch (error) {
       setStatus({ kind: "error", text: `连接失败：${error.message}` });
       setCameraHealth({ ok: false, message: error.message });
+    } finally {
+      setReconnecting(false);
+    }
+  };
+
+  // 未连接时点 ⚡ 走这里：主动探测一次健康（区别于后台 3s 轮询，带加载态）
+  const connectCamera = async () => {
+    if (reconnecting) return;
+    setReconnecting(true);
+    setStatus({ kind: "info", text: "正在连接相机..." });
+    try {
+      await refreshHealth();
+    } finally {
+      setReconnecting(false);
     }
   };
 
@@ -323,7 +349,8 @@ export function MeasurementMode({ mode, setMode }) {
           <CameraModule
             health={cameraHealth}
             onReconnect={reconnectCamera}
-            onRefresh={refreshHealth}
+            onRefresh={connectCamera}
+            reconnecting={reconnecting}
             previewOn={previewOn}
             setPreviewOn={setPreviewOn}
             captureN={captureN}
@@ -345,7 +372,8 @@ export function MeasurementMode({ mode, setMode }) {
 }
 
 function CameraModule({
-  health, onReconnect, onRefresh, previewOn, setPreviewOn,
+  health, onReconnect, onRefresh, reconnecting,
+  previewOn, setPreviewOn,
   captureN, setCaptureN, sampleName, setSampleName, sampleIndex, setSampleIndex,
   capturing, onCapture, status, liveElapsedMs, captureElapsedMs,
 }) {
@@ -358,6 +386,12 @@ function CameraModule({
 
   return (
     <div className="camera-module">
+      {reconnecting && (
+        <div className="camera-loading-overlay">
+          <div className="camera-spinner" />
+          <span>{isConnected ? "重新连接相机…" : "正在连接相机…"}</span>
+        </div>
+      )}
       <div className="section-title-row">
         <h3>相机</h3>
         <div className="camera-actions">
@@ -366,6 +400,7 @@ function CameraModule({
             className={`config-icon-btn ${isConnected ? "" : "primary"}`}
             title={connectTitle}
             onClick={connectAction}
+            disabled={reconnecting}
           >
             {isConnected ? <RefreshIcon /> : <BoltIcon />}
           </button>
@@ -572,8 +607,8 @@ function formatNetHint(net) {
   switch (net.status) {
     case "ok":
       return net.interface ? `已重配 ${net.interface}` : "已重配网卡";
-    case "sudo_expired":
-      return net.message || "sudo 密码已过期，请在终端执行 sudo -v 后重试";
+    case "nopasswd_missing":
+      return net.message || "未安装免密规则，请在启动 dcpam 的终端按提示执行安装命令";
     case "no_interface":
       return net.message || "未检测到千兆网口";
     case "not_darwin":

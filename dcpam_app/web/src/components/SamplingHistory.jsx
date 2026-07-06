@@ -1,13 +1,42 @@
 import React, { useMemo } from "react";
 
 /**
- * 采样历史列表 —— 测量模式与分析模式共用同一套。
+ * 采样历史 —— 测量模式与分析模式共用同一套，以纯表格形式呈现。
  *
- * 合并了两套能力：搜索过滤 + 刷新（原分析模式）与
- * 勾选/全选/导出 ZIP/批量删除/单删（原测量模式）。
+ * 表格列由 DEFAULT_HISTORY_COLUMNS 定义，调用方可通过 columns 传入自定义列：
+ * 每列形如 { key, header, className?, render(record, ctx) }，render 返回单元格内容。
+ * ctx 里带 formatResult(record)，用于把外部算好的计算结果映射到「计算结果」列。
  *
- * 全选、导出、批量删除都只作用于当前过滤后可见的记录（filteredRecords）。
+ * 勾选列（含表头全选）、单行删除只作用于当前过滤后可见的记录（filteredRecords），
+ * 顶部按钮的导出 / 批量删除同理。
  */
+export const DEFAULT_HISTORY_COLUMNS = [
+  {
+    key: "name",
+    header: "名称",
+    className: "col-name",
+    render: (record) => record.name || record.id,
+  },
+  {
+    key: "frames",
+    header: "有效/总张数",
+    className: "col-frames",
+    render: (record) => `${record.valid_n ?? record.n ?? 0} / ${record.n ?? 0}`,
+  },
+  {
+    key: "result",
+    header: "计算结果",
+    className: "col-result",
+    render: (record, ctx) => ctx.formatResult(record),
+  },
+  {
+    key: "ts",
+    header: "拍照时间",
+    className: "col-ts",
+    render: (record) => formatTs(record.ts),
+  },
+];
+
 export function SamplingHistory({
   records,
   totalRecords,
@@ -25,12 +54,28 @@ export function SamplingHistory({
   exporting,
   onDeleteRecords,
   listStatus,
+  columns = DEFAULT_HISTORY_COLUMNS,
+  resultsById,
 }) {
   const visibleIds = useMemo(() => records.map((r) => r.id), [records]);
   const selectedCount = exportSelection.size;
   const allSelected =
     visibleIds.length > 0 && visibleIds.every((id) => exportSelection.has(id));
   const filtered = totalRecords != null && records.length !== totalRecords;
+
+  const ctx = useMemo(
+    () => ({
+      resultsById,
+      formatResult: (record) => {
+        const res = resultsById?.[record.id];
+        if (!res || !Number.isFinite(res.distanceMean)) return "—";
+        return `${res.distanceMean.toFixed(2)} mm`;
+      },
+    }),
+    [resultsById],
+  );
+
+  const totalCols = columns.length + 2; // 勾选列 + 删除列
 
   return (
     <div className="left-stack">
@@ -41,15 +86,6 @@ export function SamplingHistory({
             {filtered ? `/${totalRecords}` : ""})
           </h3>
           <div className="sample-list-actions">
-            <button
-              type="button"
-              className="link-button"
-              disabled={!visibleIds.length}
-              onClick={() => setAllExportSelection(allSelected ? [] : visibleIds)}
-              title={allSelected ? "取消全选" : "全选当前列表"}
-            >
-              {allSelected ? "清除" : "全选"}
-            </button>
             <button
               type="button"
               className="export-zip-button"
@@ -80,65 +116,82 @@ export function SamplingHistory({
           </div>
         </div>
 
-        <input
-          className="sample-filter"
-          type="search"
-          placeholder="按 id 或名称过滤"
-          value={filter}
-          onChange={(event) => setFilter(event.target.value)}
-        />
-
         {error && <div className="capture-status status-error">{error}</div>}
 
-        <div className="sample-list">
-          {records.length === 0 ? (
-            <div className="sample-empty">
-              {totalRecords ? "无匹配采样" : "尚无采样记录"}
-            </div>
-          ) : (
-            records.map((record) => {
-              const active = record.id === selectedId;
-              const picked = exportSelection.has(record.id);
-              return (
-                <div
-                  key={record.id}
-                  className={`sample-item-row${active ? " active" : ""}${picked ? " picked" : ""}`}
-                >
-                  <label
-                    className="sample-item-check"
-                    title="勾选后可批量导出或删除"
-                    onClick={(event) => event.stopPropagation()}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={picked}
-                      onChange={() => toggleExportSelection(record.id)}
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    className="sample-item"
-                    onClick={() => setSelectedId(record.id)}
-                  >
-                    <span>{record.id}</span>
-                    <span className="sample-item-meta">n={record.valid_n ?? record.n}</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="sample-item-delete"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onDeleteRecords([record.id]);
-                    }}
-                    title={`删除 ${record.id}`}
-                    aria-label={`删除 ${record.id}`}
-                  >
-                    <TrashIcon />
-                  </button>
-                </div>
-              );
-            })
-          )}
+        <div className="sample-table-wrap">
+          <table className="sample-table">
+            <thead>
+              <tr>
+                <th className="col-check">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    disabled={!visibleIds.length}
+                    onChange={() => setAllExportSelection(allSelected ? [] : visibleIds)}
+                    title={allSelected ? "取消全选" : "全选当前列表"}
+                  />
+                </th>
+                {columns.map((col) => (
+                  <th key={col.key} className={col.className}>
+                    {col.header}
+                  </th>
+                ))}
+                <th className="col-del" aria-label="删除" />
+              </tr>
+            </thead>
+            <tbody>
+              {records.length === 0 ? (
+                <tr>
+                  <td className="sample-empty" colSpan={totalCols}>
+                    {totalRecords ? "无匹配采样" : "尚无采样记录"}
+                  </td>
+                </tr>
+              ) : (
+                records.map((record) => {
+                  const active = record.id === selectedId;
+                  const picked = exportSelection.has(record.id);
+                  return (
+                    <tr
+                      key={record.id}
+                      className={`sample-row${active ? " active" : ""}${picked ? " picked" : ""}`}
+                      onClick={() => setSelectedId(record.id)}
+                    >
+                      <td
+                        className="col-check"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={picked}
+                          onChange={() => toggleExportSelection(record.id)}
+                          title="勾选后可批量导出或删除"
+                        />
+                      </td>
+                      {columns.map((col) => (
+                        <td key={col.key} className={col.className}>
+                          {col.render(record, ctx)}
+                        </td>
+                      ))}
+                      <td className="col-del">
+                        <button
+                          type="button"
+                          className="sample-item-delete"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onDeleteRecords([record.id]);
+                          }}
+                          title={`删除 ${record.id}`}
+                          aria-label={`删除 ${record.id}`}
+                        >
+                          <TrashIcon />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
 
         {listStatus && listStatus.text && (
@@ -146,6 +199,17 @@ export function SamplingHistory({
         )}
       </section>
     </div>
+  );
+}
+
+function formatTs(ts) {
+  if (!ts) return "—";
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return ts;
+  const pad = (n) => String(n).padStart(2, "0");
+  return (
+    `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
+    `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
   );
 }
 

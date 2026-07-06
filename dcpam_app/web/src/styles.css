@@ -1515,76 +1515,93 @@ tbody tr:hover td {
   border-color: var(--accent);
 }
 
-.sample-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  max-height: 40vh;
-  overflow: auto;
+/* 采样历史：纯表格呈现，表头 sticky，行可点选 / 勾选 / 删除。 */
+.sample-table-wrap {
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 4px;
   background: var(--surface);
 }
 
-.sample-empty {
-  padding: 12px;
-  font-size: 11px;
-  color: var(--muted);
-  text-align: center;
+.sample-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 12px;
 }
 
-.sample-item-row {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 4px;
-  padding: 0 2px 0 4px;
-  border-radius: 6px;
+.sample-table thead th {
+  background: var(--surface);
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 10px;
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line-strong);
+  white-space: nowrap;
+}
+
+.sample-table tbody td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sample-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.sample-row {
+  cursor: pointer;
   transition: background 100ms ease;
 }
 
-.sample-item-row.picked {
+.sample-row:hover td {
+  background: var(--raised);
+}
+
+.sample-row.picked td {
   background: rgba(22, 163, 74, 0.08);
 }
 
-.sample-item-row.active {
+.sample-row.active td {
+  background: var(--text);
+  color: var(--bg);
+}
+
+.sample-row.active:hover td {
   background: var(--text);
 }
 
-.sample-item-row.active.picked {
-  background: var(--text);
-  outline: 1px solid rgba(22, 163, 74, 0.6);
+/* 勾选列 / 删除列：贴边、定宽、居中 */
+.sample-table .col-check,
+.sample-table .col-del {
+  width: 1%;
+  text-align: center;
+  padding-left: 4px;
+  padding-right: 4px;
 }
 
-.sample-item-check {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 4px;
-  cursor: pointer;
-}
-
-.sample-item-check input[type="checkbox"] {
+.sample-table .col-check input[type="checkbox"] {
   width: 14px;
   height: 14px;
   cursor: pointer;
   accent-color: #16a34a;
+  vertical-align: middle;
 }
 
-.sample-item-row .sample-item {
-  flex: 1;
-  min-width: 0;
-  background: transparent;
+.sample-table .col-name {
+  max-width: 96px;
 }
 
-.sample-item-row.active .sample-item {
-  color: var(--bg);
-}
-
-.sample-item-row.active .sample-item-meta {
-  color: var(--bg);
-  opacity: 0.7;
+.sample-table td.sample-empty {
+  padding: 12px;
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
+  white-space: normal;
 }
 
 .sample-item-delete {
@@ -1601,9 +1618,9 @@ tbody tr:hover td {
   transition: background 120ms ease, color 120ms ease, opacity 120ms ease;
 }
 
-.sample-item-row:hover .sample-item-delete,
-.sample-item-row.active .sample-item-delete,
-.sample-item-row.picked .sample-item-delete {
+.sample-row:hover .sample-item-delete,
+.sample-row.active .sample-item-delete,
+.sample-row.picked .sample-item-delete {
   opacity: 1;
 }
 
@@ -1612,11 +1629,11 @@ tbody tr:hover td {
   color: #dc2626;
 }
 
-.sample-item-row.active .sample-item-delete {
+.sample-row.active .sample-item-delete {
   color: rgba(255, 255, 255, 0.7);
 }
 
-.sample-item-row.active .sample-item-delete:hover {
+.sample-row.active .sample-item-delete:hover {
   background: rgba(220, 38, 38, 0.35);
   color: #ffffff;
 }
@@ -1683,54 +1700,6 @@ tbody tr:hover td {
   border-color: var(--line);
   cursor: not-allowed;
   opacity: 0.7;
-}
-
-.sample-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 6px 10px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  font-family: var(--mono);
-  font-size: 12px;
-  color: var(--text);
-  text-align: left;
-  cursor: pointer;
-  transition: background 100ms ease;
-}
-
-.sample-item:hover {
-  background: var(--raised);
-}
-
-.sample-item.active {
-  background: var(--text);
-  color: var(--bg);
-}
-
-.sample-item-meta {
-  font-size: 10px;
-  color: var(--muted);
-  flex-shrink: 0;
-}
-
-.sample-item.active .sample-item-meta {
-  color: var(--bg);
-  opacity: 0.7;
-}
-
-/* 已激活行（黑底）上，鼠标悬停不再叠浅灰盖住白字，
-   而是用一层微弱的高光；picked 行悬停也只做轻微加深，不与选中态打架。 */
-.sample-item-row.active .sample-item:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--bg);
-}
-
-.sample-item-row.picked:not(.active) .sample-item:hover {
-  background: rgba(22, 163, 74, 0.16);
 }
 
 .preview-section .preview-block {
@@ -2235,9 +2204,42 @@ label.config-icon-btn {
    =================================================================== */
 
 .camera-module {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+/* 连接 / 重连相机时的蒙雾加载层 */
+.camera-loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(2px);
+  color: var(--text);
+  font-size: 13px;
+  border-radius: 8px;
+}
+
+.camera-spinner {
+  width: 26px;
+  height: 26px;
+  border: 3px solid var(--line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: camera-spin 0.7s linear infinite;
+}
+
+@keyframes camera-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* 相机模块内平铺的预览采集设置：上方一条分隔线与拍照控件区隔开 */
