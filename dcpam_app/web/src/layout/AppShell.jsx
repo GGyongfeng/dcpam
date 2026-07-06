@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 
-import { MainPanelSwitcher, ModeSwitcher, PreviewSettings } from "../components/Switchers.jsx";
-import { SettingsModal } from "../components/SettingsModal.jsx";
+import { ModeSwitcher } from "../components/Switchers.jsx";
 import {
   PanelResizer,
   SampleDrawerResizer,
@@ -18,24 +17,25 @@ export function AppShell({
   mode,
   setMode,
   mainPanel,
-  setMainPanel,
   leftSidebar,
   sceneSlot,
   processSlot,
+  mainSlot,
   brandTitle = "DCPAM",
 }) {
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sampleDrawerOpen, setSampleDrawerOpen] = useState(true);
   const { startDrag: startSampleDrag } = useSampleDrawerWidth();
   const { startDrag: startSidebarDrag } = useSidebarWidth();
 
+  // mainSlot 存在 → 单列主区模式（测量模式）：只有左栏 + 主区，无右列 / 无 3D↔过程互换。
+  const single = Boolean(mainSlot);
   const sceneArea = mainPanel === "3d" ? "main" : "right";
   const processArea = mainPanel === "3d" ? "right" : "main";
 
   return (
     <div
-      className={`app workspace ${sidebarOpen ? "" : "sidebar-collapsed"} ${sampleDrawerOpen ? "" : "sample-collapsed"}`}
+      className={`app workspace ${single ? "mode-measurement" : ""} ${sidebarOpen ? "" : "sidebar-collapsed"} ${!single && !sampleDrawerOpen ? "sample-collapsed" : ""}`}
     >
       <button
         type="button"
@@ -46,29 +46,26 @@ export function AppShell({
       >
         <span>{sidebarOpen ? "‹" : "›"}</span>
       </button>
-      <button
-        type="button"
-        className="edge-toggle edge-toggle-right"
-        title={sampleDrawerOpen ? "收起右栏" : "展开右栏"}
-        aria-label={sampleDrawerOpen ? "收起右栏" : "展开右栏"}
-        onClick={() => setSampleDrawerOpen((v) => !v)}
-      >
-        <span>{sampleDrawerOpen ? "›" : "‹"}</span>
-      </button>
+      {!single && (
+        <button
+          type="button"
+          className="edge-toggle edge-toggle-right"
+          title={sampleDrawerOpen ? "收起右栏" : "展开右栏"}
+          aria-label={sampleDrawerOpen ? "收起右栏" : "展开右栏"}
+          onClick={() => setSampleDrawerOpen((v) => !v)}
+        >
+          <span>{sampleDrawerOpen ? "›" : "‹"}</span>
+        </button>
+      )}
 
       <aside className="sidebar workspace-sidebar">
         <div className="brand-row">
           <div className="brand">
             <h1>{brandTitle}</h1>
           </div>
-          <button
-            type="button"
-            className="brand-settings"
-            aria-label="设置"
-            onClick={() => setSettingsOpen(true)}
-          >
-            ⚙
-          </button>
+          <div className="brand-actions">
+            <ModeSwitcher mode={mode} setMode={setMode} />
+          </div>
         </div>
         {leftSidebar}
         {sidebarOpen && (
@@ -76,21 +73,21 @@ export function AppShell({
         )}
       </aside>
 
-      <div className="slot slot-3d" style={{ gridArea: sceneArea }}>
-        {sceneArea === "right" && <SampleDrawerResizer startDrag={startSampleDrag} />}
-        {sceneSlot}
-      </div>
-      <div className="slot slot-process" style={{ gridArea: processArea }}>
-        {processArea === "right" && <SampleDrawerResizer startDrag={startSampleDrag} />}
-        {processSlot}
-      </div>
-
-      {settingsOpen && (
-        <SettingsModal onClose={() => setSettingsOpen(false)}>
-          <ModeSwitcher mode={mode} setMode={setMode} />
-          <MainPanelSwitcher mainPanel={mainPanel} setMainPanel={setMainPanel} />
-          <PreviewSettings />
-        </SettingsModal>
+      {single ? (
+        <div className="slot slot-main" style={{ gridArea: "main" }}>
+          {mainSlot}
+        </div>
+      ) : (
+        <>
+          <div className="slot slot-3d" style={{ gridArea: sceneArea }}>
+            {sceneArea === "right" && <SampleDrawerResizer startDrag={startSampleDrag} />}
+            {sceneSlot}
+          </div>
+          <div className="slot slot-process" style={{ gridArea: processArea }}>
+            {processArea === "right" && <SampleDrawerResizer startDrag={startSampleDrag} />}
+            {processSlot}
+          </div>
+        </>
       )}
     </div>
   );

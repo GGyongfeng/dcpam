@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { SceneView } from "../SceneView.jsx";
 import { DEFAULT_LAYERS, LayersDrawer } from "../components/LayersDrawer.jsx";
 import { ProcessPanel } from "../components/ProcessPanel.jsx";
+import { SamplingHistory } from "../components/SamplingHistory.jsx";
 import { AppShell } from "../layout/AppShell.jsx";
 import { buildGeometry } from "../geometry.js";
 import { measureRow, aggregateDistance } from "../pipeline.js";
@@ -21,6 +22,9 @@ export function AnalysisMode({ mode, setMode, mainPanel, setMainPanel, tomlConfi
   const [layers, setLayers] = useState(DEFAULT_LAYERS);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [exportSelection, setExportSelection] = useState(() => new Set());
+  const [exporting, setExporting] = useState(false);
+  const [listStatus, setListStatus] = useState({ kind: "idle", text: "" });
 
   const refreshRecords = useCallback(async () => {
     setLoading(true);
@@ -37,9 +41,124 @@ export function AnalysisMode({ mode, setMode, mainPanel, setMainPanel, tomlConfi
     }
   }, []);
 
+  const toggleExportSelection = useCallback((id) => {
+    setExportSelection((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const setAllExportSelection = useCallback((ids) => {
+    setExportSelection(new Set(ids));
+  }, []);
+
+  const handleExportZip = useCallback(async () => {
+    if (exporting) return;
+    const ids = [...exportSelection];
+    if (!ids.length) {
+      setListStatus({ kind: "error", text: "请先勾选要导出的采样" });
+      return;
+    }
+    setExporting(true);
+    setListStatus({ kind: "info", text: `正在打包 ${ids.length} 个采样...` });
+    try {
+      const response = await fetch("/api/measurements/export-zip", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+      if (!response.ok) {
+        let detail = `HTTP ${response.status}`;
+        try {
+          const payload = await response.json();
+          detail = payload?.detail || detail;
+        } catch (_) {}
+        throw new Error(detail);
+      }
+      const disposition = response.headers.get("Content-Disposition") || "";
+      const nameMatch = disposition.match(/filename="?([^";]+)"?/i);
+      const filename = nameMatch ? nameMatch[1] : `measurements_${ids.length}.zip`;
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      setListStatus({ kind: "ok", text: `已导出 ${ids.length} 个采样：${filename}` });
+    } catch (err) {
+      setListStatus({ kind: "error", text: `导出失败：${err.message}` });
+    } finally {
+      setExporting(false);
+    }
+  }, [exportSelection, exporting]);
+
+  const handleDeleteRecords = useCallback(async (idsToDelete, { silent } = {}) => {
+    const ids = [...new Set(idsToDelete || [])].filter(Boolean);
+    if (!ids.length) return;
+    if (!silent) {
+      const label = ids.length === 1 ? ids[0] : `${ids.length} 个采样`;
+      const confirmed = window.confirm(`确认删除 ${label} 吗？此操作不可撤销。`);
+      if (!confirmed) return;
+    }
+    setListStatus({ kind: "info", text: `正在删除 ${ids.length} 个采样...` });
+    const failed = [];
+    for (const id of ids) {
+      try {
+        const response = await fetch(`/api/measurements/${encodeURIComponent(id)}`, {
+          method: "DELETE",
+        });
+        if (!response.ok) {
+          let detail = `HTTP ${response.status}`;
+          try {
+            const payload = await response.json();
+            detail = payload?.detail || detail;
+          } catch (_) {}
+          failed.push(`${id}:${detail}`);
+        }
+      } catch (err) {
+        failed.push(`${id}:${err.message}`);
+      }
+    }
+    setRecords((current) => current.filter((r) => !ids.includes(r.id)));
+    setExportSelection((prev) => {
+      const next = new Set(prev);
+      ids.forEach((id) => next.delete(id));
+      return next;
+    });
+    setSelectedId((current) => (ids.includes(current) ? "" : current));
+    if (failed.length) {
+      setListStatus({ kind: "error", text: `删除失败：${failed.slice(0, 3).join("; ")}` });
+    } else {
+      setListStatus({ kind: "ok", text: `已删除 ${ids.length} 个采样` });
+    }
+    refreshRecords();
+  }, [refreshRecords]);
+
   useEffect(() => {
     refreshRecords();
   }, [refreshRecords]);
+
+  useEffect(() => {
+    if (!records.length) {
+      setExportSelection((prev) => (prev.size ? new Set() : prev));
+      return;
+    }
+    setExportSelection((prev) => {
+      const validIds = new Set(records.map((r) => r.id));
+      let changed = false;
+      const next = new Set();
+      for (const id of prev) {
+        if (validIds.has(id)) next.add(id);
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [records]);
 
   const orderedRecords = useMemo(
     () => [...records].sort((a, b) => (b.ts || "").localeCompare(a.ts || "")),
@@ -109,10 +228,9 @@ export function AnalysisMode({ mode, setMode, mainPanel, setMainPanel, tomlConfi
       mode={mode}
       setMode={setMode}
       mainPanel={mainPanel}
-      setMainPanel={setMainPanel}
       brandTitle="DCPAM 分析"
       leftSidebar={
-        <LeftSidebar
+        <SamplingHistory
           records={filteredRecords}
           totalRecords={orderedRecords.length}
           selectedId={selectedRecord?.id || ""}
@@ -122,6 +240,13 @@ export function AnalysisMode({ mode, setMode, mainPanel, setMainPanel, tomlConfi
           onRefresh={refreshRecords}
           loading={loading}
           error={error}
+          exportSelection={exportSelection}
+          toggleExportSelection={toggleExportSelection}
+          setAllExportSelection={setAllExportSelection}
+          onExportZip={handleExportZip}
+          exporting={exporting}
+          onDeleteRecords={handleDeleteRecords}
+          listStatus={listStatus}
         />
       }
       sceneSlot={
@@ -132,7 +257,12 @@ export function AnalysisMode({ mode, setMode, mainPanel, setMainPanel, tomlConfi
             geometry={geometry}
             layers={layers}
           />
-          <LayersDrawer layers={layers} setLayers={setLayers} />
+          <LayersDrawer
+            layers={layers}
+            setLayers={setLayers}
+            mainPanel={mainPanel}
+            setMainPanel={setMainPanel}
+          />
           {geometryState.error && <div className="viewer-error">配置解析失败：{geometryState.error}</div>}
           {!orderedRecords.length && !geometry && (
             <div className="empty">尚无采样记录，切到"拍照测量"采集，或加载 config.toml</div>
@@ -148,59 +278,6 @@ export function AnalysisMode({ mode, setMode, mainPanel, setMainPanel, tomlConfi
         />
       }
     />
-  );
-}
-
-function LeftSidebar({
-  records, totalRecords, selectedId, setSelectedId,
-  filter, setFilter, onRefresh, loading, error,
-}) {
-  return (
-    <div className="left-stack">
-      <section className="section sample-list-section">
-        <div className="section-title-row">
-          <h3>采样历史 ({records.length}{records.length !== totalRecords ? `/${totalRecords}` : ""})</h3>
-          <div className="sample-list-actions">
-            <button
-              type="button"
-              className="link-button"
-              onClick={onRefresh}
-              disabled={loading}
-              title="重新读取本地 data/measurements 目录"
-            >
-              {loading ? "刷新中..." : "刷新"}
-            </button>
-          </div>
-        </div>
-        <input
-          className="sample-filter"
-          type="search"
-          placeholder="按 id 或名称过滤"
-          value={filter}
-          onChange={(event) => setFilter(event.target.value)}
-        />
-        {error && <div className="capture-status status-error">{error}</div>}
-        <div className="sample-list">
-          {records.length === 0 ? (
-            <div className="sample-empty">
-              {totalRecords === 0 ? "尚无采样记录，切到\"拍照测量\"开始采集" : "无匹配采样"}
-            </div>
-          ) : (
-            records.map((record) => (
-              <button
-                type="button"
-                key={record.id}
-                className={`sample-item ${record.id === selectedId ? "active" : ""}`}
-                onClick={() => setSelectedId(record.id)}
-              >
-                <span>{record.id}</span>
-                <span className="sample-item-meta">n={record.valid_n ?? record.n}</span>
-              </button>
-            ))
-          )}
-        </div>
-      </section>
-    </div>
   );
 }
 

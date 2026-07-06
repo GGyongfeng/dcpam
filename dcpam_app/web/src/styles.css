@@ -68,6 +68,27 @@ select {
   grid-template-columns: 0 1fr 0;
 }
 
+/* 测量模式：只有左栏 + 主区两列，无右列 */
+.workspace.mode-measurement {
+  grid-template-areas: "left main";
+  grid-template-columns: var(--left-width, 320px) 1fr;
+}
+
+.workspace.mode-measurement.sidebar-collapsed {
+  grid-template-columns: 0 1fr;
+}
+
+/* 测量模式主区：相机模块居中留白 */
+.slot.slot-main {
+  overflow: auto;
+}
+
+.camera-main {
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 18px;
+}
+
 .workspace .sidebar {
   grid-area: left;
   position: relative;
@@ -253,17 +274,24 @@ select {
   letter-spacing: 0;
 }
 
+.brand-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
 .brand-settings {
-  width: 32px;
-  min-width: 32px;
-  height: 32px;
-  min-height: 32px;
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  min-height: 30px;
   padding: 0;
   border: 1px solid var(--line);
-  border-radius: 99px;
+  border-radius: 6px;
   background: var(--bg);
   color: var(--muted);
-  font-size: 18px;
+  font-size: 17px;
   line-height: 1;
   cursor: pointer;
   transition: color 120ms ease, border-color 120ms ease;
@@ -1085,6 +1113,11 @@ tbody tr:hover td {
   color: var(--text);
 }
 
+/* 首个 section 的标题行给关闭 ✕ 让位，避免「已同步」和 ✕ 叠在一起 */
+.settings-modal > .settings-section:first-child .settings-title-row {
+  padding-right: 34px;
+}
+
 .settings-section {
   display: flex;
   flex-direction: column;
@@ -1151,11 +1184,33 @@ tbody tr:hover td {
 
 .mode-segmented {
   display: flex;
-  gap: 4px;
-  padding: 4px;
+  gap: 2px;
+  padding: 2px;
   border: 1px solid var(--line);
-  border-radius: 99px;
-  background: var(--surface);
+  border-radius: 7px;
+  background: var(--bg);
+}
+
+/* 左侧栏顶部与设置按钮并列的紧凑模式切换 */
+.mode-segmented-compact {
+  height: 30px;
+  box-sizing: border-box;
+  align-items: stretch;
+  padding: 3px;
+}
+
+.mode-segmented-compact .segment-btn {
+  flex: 1;
+  min-width: 46px;
+  min-height: 0;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  font-size: 12px;
+  line-height: 1;
+  border-radius: 4px;
 }
 
 .segment-btn {
@@ -1164,8 +1219,9 @@ tbody tr:hover td {
   background: transparent;
   color: var(--muted);
   padding: 6px 14px;
-  border-radius: 99px;
+  border-radius: 5px;
   font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
   transition: background 120ms ease, color 120ms ease;
 }
@@ -1264,7 +1320,7 @@ tbody tr:hover td {
   margin-top: 4px;
   padding: 10px 16px;
   border: none;
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--text);
   color: var(--bg);
   font-size: 14px;
@@ -1572,6 +1628,30 @@ tbody tr:hover td {
   flex-wrap: wrap;
 }
 
+/* 历史操作区四个按钮统一成一套：定高、6px 圆角、描边盒子 */
+.sample-list-actions .link-button,
+.sample-list-actions .export-zip-button,
+.sample-list-actions .delete-batch-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 11px;
+  font-family: var(--mono);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.sample-list-actions .link-button:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
 .export-zip-button,
 .delete-batch-button {
   border: 1px solid var(--line-strong);
@@ -1750,6 +1830,21 @@ tbody tr:hover td {
   gap: 6px;
 }
 
+/* 分析模式田字面板顶部的「主面板内容」切换 */
+.layers-drawer-panel-switch {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.layer-subgroup-label {
+  font-size: 11px;
+  color: var(--muted);
+}
+
 .layers-drawer-actions button {
   flex: 1;
   min-height: 28px;
@@ -1771,6 +1866,17 @@ tbody tr:hover td {
 
 .sample-list-section .section-title-row h3 {
   margin: 0;
+}
+
+/* 历史标题与操作按钮各占一行，避免 4 个按钮在窄侧栏里挤成一团 */
+.sample-list-section .section-title-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.sample-list-section .sample-list-actions {
+  justify-content: flex-start;
 }
 
 /* ===================================================================
@@ -1863,7 +1969,7 @@ label.config-icon-btn {
   justify-content: center;
   padding: 0 8px;
   border: 1px solid var(--line);
-  border-radius: 5px;
+  border-radius: 6px;
   background: var(--bg);
   color: var(--muted);
   cursor: pointer;
@@ -2132,6 +2238,16 @@ label.config-icon-btn {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+/* 相机模块内平铺的预览采集设置：上方一条分隔线与拍照控件区隔开 */
+.camera-preview-settings {
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .camera-line {

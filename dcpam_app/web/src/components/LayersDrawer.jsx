@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 
+import { MainPanelSwitcher } from "./Switchers.jsx";
+
 const LAYER_GROUPS = [
   {
     title: "设备结构",
@@ -74,13 +76,15 @@ export const DEFAULT_LAYERS = {
   labels: true,
 };
 
-export function LayersDrawer({ layers, setLayers }) {
+export function LayersDrawer({ layers, setLayers, mainPanel, setMainPanel }) {
   const [open, setOpen] = useState(false);
   const setLayer = (key, value) => setLayers((current) => ({ ...current, [key]: value }));
   const setLayerKeys = (keys, value) =>
     setLayers((current) => ({ ...current, ...Object.fromEntries(keys.map((key) => [key, value])) }));
   const setAllLayers = (value) =>
     setLayers(Object.fromEntries(Object.keys(DEFAULT_LAYERS).map((key) => [key, value])));
+
+  const showPanelSwitch = Boolean(setMainPanel);
 
   if (!open) {
     return (
@@ -105,6 +109,12 @@ export function LayersDrawer({ layers, setLayers }) {
           onClick={() => setOpen(false)}
         >×</button>
       </div>
+      {showPanelSwitch && (
+        <div className="layers-drawer-panel-switch">
+          <span className="layer-subgroup-label">主面板内容</span>
+          <MainPanelSwitcher mainPanel={mainPanel} setMainPanel={setMainPanel} />
+        </div>
+      )}
       <div className="layers-drawer-actions">
         <button type="button" onClick={() => setAllLayers(true)}>全部显示</button>
         <button type="button" onClick={() => setAllLayers(false)}>全部隐藏</button>
