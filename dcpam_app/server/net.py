@@ -15,6 +15,9 @@ CAMERA_HOST_IP = "192.168.0.1"
 CAMERA_NETMASK = "255.255.255.0"
 CAMERA_PROBE_IP = "192.168.0.2"
 
+# 免密 sudo 规则文件（放开配置/清理相机网卡两条命令）。装一次后配网卡永久免密。
+SUDOERS_FILE = "/etc/sudoers.d/dcpam-camera-net"
+
 
 def describe(exc: BaseException) -> str:
     """把异常压成一行简短描述。"""
@@ -94,6 +97,28 @@ def configure_camera_ip(iface: str) -> bool:
     cmd = ["sudo", "-n", "ifconfig", iface, CAMERA_HOST_IP, "netmask", CAMERA_NETMASK, "up"]
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=5)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
+
+
+def sudoers_installed() -> bool:
+    """免密规则是否已装好并可用（macOS）。
+
+    先看规则文件在不在，再用 `sudo -n -l ifconfig` 确认能免密（-n 不会弹密码，
+    未装规则则非零退出）。任一不满足即视作未装。
+    """
+    if sys.platform != "darwin":
+        return True  # 非 macOS 不需要这条规则
+    import os
+
+    if not os.path.exists(SUDOERS_FILE):
+        return False
+    try:
+        result = subprocess.run(
+            ["sudo", "-n", "-l", "/sbin/ifconfig"],
+            capture_output=True, text=True, check=False, timeout=5,
+        )
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
     return result.returncode == 0

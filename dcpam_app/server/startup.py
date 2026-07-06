@@ -121,59 +121,28 @@ def _find_ethernet_iface(ifconfig_output: str) -> str | None:
     return None
 
 
-def _check_cameras() -> CheckResult:
-    if sys.platform == "win32":
-        return _check_cameras_daheng()
-    return _check_cameras_aravis()
+def _check_permission() -> CheckResult:
+    """免密网卡配置规则是否装好（macOS）。没装则给出安装提示。"""
+    from . import net
 
-
-def _check_cameras_daheng() -> CheckResult:
-    try:
-        from dcpam.camera import _get_gxipy
-        gx = _get_gxipy()
-        dm = gx.DeviceManager()
-        n, dev_info_list = dm.update_device_list()
-        if n >= 2:
-            ids = [info.get("sn", f"cam{i+1}") for i, info in enumerate(dev_info_list)]
-            return CheckResult(name="双相机", passed=True, message=f"{n} 台在线: {', '.join(ids)}")
-        return CheckResult(
-            name="双相机",
-            passed=False,
-            message=f"仅检测到 {n} 台",
-            remedy="检查相机电源、网线、交换机连接（要求 192.168.0.x 子网）",
-        )
-    except Exception as exc:
-        return CheckResult(
-            name="双相机",
-            passed=False,
-            message=f"无法检测 ({str(exc).splitlines()[0][:60]})",
-            remedy="先安装 Galaxy SDK 并确认 gxipy 可导入",
-        )
-
-
-def _check_cameras_aravis() -> CheckResult:
-    try:
-        import gi
-        gi.require_version("Aravis", "0.8")
-        from gi.repository import Aravis
-        Aravis.update_device_list()
-        n = Aravis.get_n_devices()
-        if n >= 2:
-            ids = [Aravis.get_device_id(i) for i in range(n)]
-            return CheckResult(name="双相机", passed=True, message=f"{n} 台在线: {', '.join(ids)}")
-        return CheckResult(
-            name="双相机",
-            passed=False,
-            message=f"仅检测到 {n} 台",
-            remedy="检查相机电源、网线、交换机连接",
-        )
-    except Exception:
-        return CheckResult(
-            name="双相机",
-            passed=False,
-            message="无法检测 (Aravis 未就绪)",
-            remedy="请先安装 Aravis",
-        )
+    if sys.platform != "darwin":
+        return CheckResult(name="网卡免密权限", passed=True, message="非 macOS，无需配置")
+    if net.sudoers_installed():
+        return CheckResult(name="网卡免密权限", passed=True, message="已配置")
+    return CheckResult(
+        name="网卡免密权限",
+        passed=False,
+        message="未安装免密规则",
+        remedy=(
+            "执行一次（输一次密码），之后配网卡/重连免密：\n"
+            "printf '%s ALL=(root) NOPASSWD: /sbin/ifconfig en[0-9]* 192.168.0.1 "
+            "netmask 255.255.255.0 up\\n%s ALL=(root) NOPASSWD: /sbin/ifconfig "
+            "en[0-9]* -alias 192.168.0.1\\n' \"$(whoami)\" \"$(whoami)\" "
+            "| sudo tee /etc/sudoers.d/dcpam-camera-net > /dev/null "
+            "&& sudo chmod 440 /etc/sudoers.d/dcpam-camera-net "
+            "&& sudo visudo -c -f /etc/sudoers.d/dcpam-camera-net"
+        ),
+    )
 
 
 def _check_file(name: str, path) -> CheckResult:
@@ -188,19 +157,22 @@ def _check_file(name: str, path) -> CheckResult:
 
 
 def run_checks(paths: DCPAMPaths) -> list[CheckResult]:
-    """运行全部启动检测。"""
+    """运行启动自检：只查环境/权限/网卡/配置，不探测相机。
+
+    相机连接留到运行时（前端切测量模式点 ⚡ 或调重连接口）再做，启动不阻塞、不探测。
+    """
     results = [_check_os()]
 
     sdk = _check_camera_sdk()
     results.append(sdk)
 
     if sdk.passed:
+        results.append(_check_permission())
         results.append(_check_network())
-        results.append(_check_cameras())
     else:
         sdk_name = "Galaxy SDK" if sys.platform == "win32" else "Aravis"
+        results.append(CheckResult(name="网卡免密权限", passed=False, message="跳过", remedy=f"请先安装 {sdk_name}"))
         results.append(CheckResult(name="交换机 IP", passed=False, message="跳过", remedy=f"请先安装 {sdk_name}"))
-        results.append(CheckResult(name="双相机", passed=False, message="跳过", remedy=f"请先安装 {sdk_name}"))
 
     results.append(_check_file("config.toml", paths.config_file))
 

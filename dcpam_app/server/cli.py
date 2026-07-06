@@ -154,7 +154,7 @@ _CAMERA_NETMASK = net.CAMERA_NETMASK
 # 免密 sudo 规则文件（仅放开配置/清理相机网卡这两条命令）。
 # 装一次后，启动/重连配网卡、清理冲突网卡都不再要密码。
 # 仅 macOS 需要；Windows 走 Galaxy SDK 不涉及。
-_SUDOERS_FILE = "/etc/sudoers.d/dcpam-camera-net"
+_SUDOERS_FILE = net.SUDOERS_FILE
 # 两行规则：① 把 en 网口配成 192.168.0.1；② 摘掉 en 网口上的 192.168.0.1（清理抢路由的残留网卡）。
 _SUDOERS_RULES = (
     "%s ALL=(root) NOPASSWD: /sbin/ifconfig en[0-9]* 192.168.0.1 netmask 255.255.255.0 up",
@@ -286,8 +286,8 @@ def main() -> None:
     failed = [r for r in results if not r.passed]
     if failed:
         console.print(
-            "  [yellow]以上检测未全部通过：分析模式可直接使用；测量模式（拍照/预览）需要相机连接[/]\n"
-            "  [dim]修复后无需重启，前端切到测量模式点 ⚡ 即可重连相机[/]\n"
+            "  [yellow]以上自检未全部通过：分析模式可直接使用；测量模式（拍照/预览）需按上面的提示修复[/]\n"
+            "  [dim]修复后无需重启，前端切到测量模式点 ⚡ 即可连接相机[/]\n"
         )
 
     host = os.environ.get("DCPAM_HOST", DEFAULT_HOST)
