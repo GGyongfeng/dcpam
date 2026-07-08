@@ -99,3 +99,7 @@ reference/
 *.fls
 *.out
 *.synctex.gz
+
+# LaTeX compiled output (regenerable)
+papers/main.pdf
+*.xdv

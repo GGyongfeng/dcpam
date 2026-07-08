@@ -1,0 +1,177 @@
+\section{测量模型与建模}
+\label{sec:model}
+
+本节给出 DCPAM 的完整建模过程：先约定坐标系与关键符号，再给出总测量模型，
+随后逐步展开从像素光斑到点线距离的四步计算链路，最后说明所依赖的标定方法，
+并把整条链路整理为便于误差分析的端到端仿射形式。
+
+\subsection{坐标系约定}
+
+系统涉及三个坐标系。前相机坐标系记为 $C_1$，后相机坐标系记为 $C_2$，二者的
+原点分别位于对应相机光心，$Z$ 轴沿各自光轴指向物方，均为右手系；相机光心在
+自身坐标系中恒为 $(0,0,0)^\mathsf{T}$，这是坐标系定义，不由内参计算得到。设备
+坐标系记为 $D$，是算法的主坐标系，定义为前取景框的局部系：原点取前取景框中心，
+$+X$ 由前相机模块指向后相机模块，$+Y$ 沿画面自上而下，$+Z$ 指向远离相机的
+方向（即毛玻璃一侧），亦为右手系。前、后两个模块拍到的实像点最终都统一到 $D$ 下
+完成镜面反射、激光线构造与距离计算；两相机之间的外参不参与主链路，坐标统一改由
+各模块取景框的位姿标定完成，具体见第~\ref{subsec:calib} 节。
+
+这里需要区分两个易混概念。设备上的物理基准面称为“设备实像面”，即毛玻璃紧贴
+取景框、位于设备坐标系 $Z=0$ 的那一面；而“PnP 实像面”是由取景框位姿标定得到的、
+位于相机坐标系下的实像面估计。建模的核心工作之一，就是把 PnP 实像面与设备坐标系
+中的设备实像面对齐，从而把相机系下的量搬入设备系。
+
+\subsection{总测量模型}
+
+DCPAM 的输入是前、后相机采集的两幅图像与测杆工装长度，输出是目标点到激光基准轴
+的距离，整体模型可写为
+\begin{equation}
+\label{eq:dcpam}
+h_t = \mathrm{DCPAM}(I_{C_1},\, I_{C_2},\, l_T),
+\end{equation}
+其中 $I_{C_1}$、$I_{C_2}$ 分别为相机 $C_1$、$C_2$ 采集的图像，$l_T$ 为测杆工装
+长度，$h_t$ 为目标点到激光基准线的垂直距离。表~\ref{tab:symbols} 列出建模过程中
+用到的关键点符号及其所属坐标系。
+
+\begin{table}[t]
+\centering
+\caption{关键坐标点符号}
+\label{tab:symbols}
+\begin{tabular}{@{}llp{3.6cm}@{}}
+\toprule
+符号 & 坐标系 & 含义 \\
+\midrule
+$P^f_{\mathrm{real}}$      & $D$   & 前接收屏上的激光实像点（并入设备系后） \\
+$P^b_{\mathrm{real}}$      & $D$   & 后接收屏上的激光实像点（并入设备系后） \\
+$P^f_{\mathrm{virtual}}$   & $D$   & 前反射镜镜像得到的激光虚像点 \\
+$P^b_{\mathrm{virtual}}$   & $D$   & 后反射镜镜像得到的激光虚像点 \\
+$P_T$                      & $D$   & 目标点（测杆末端靶点） \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+模型的几何直觉是：激光被前、后两片倾斜反射镜分别折向各自的毛玻璃接收屏，
+相机拍到的是激光在接收屏上的实像；把这两个实像点关于各自反射镜做镜面反射，即可
+在设备坐标系下还原出激光被折射之前所在的两点，这两个虚像点确定了激光基准轴的
+空间直线，目标点到该直线的垂距即为所求。
+
+\subsection{四步计算链路}
+
+DCPAM-CV 的计算链路可分为四步。之所以这样划分，是因为前三步各自对应一个相互
+独立的误差来源：第一步的光斑圆心提取取决于像素定位精度，第二步的反投影与转入
+取景框局部系取决于 PnP 定位精度，第三步的统一到设备坐标系与镜面反射取决于设备
+几何尺寸的测量与安装精度；三者互不影响。第四步只是最终的距离结算，本身不引入新
+的误差，其误差完全由前三步传递而来。这一划分与第~\ref{sec:exp} 节的误差分析
+一一对应。
+
+\subsubsection{光斑提取}
+首先从前、后相机图像中提取激光光斑的圆心像素坐标 $(u_1,v_1)$ 与 $(u_2,v_2)$，
+写成齐次形式
+\begin{equation}
+\label{eq:pixel}
+\bm{p}_1 = (u_1, v_1, 1)^\mathsf{T}, \qquad
+\bm{p}_2 = (u_2, v_2, 1)^\mathsf{T}.
+\end{equation}
+激光打在毛玻璃上形成的光斑较大且中心饱和，圆心定位的稳健性对最终精度影响显著，
+相关分析见第~\ref{sec:exp} 节。
+
+\subsubsection{反投影与位姿对齐}
+本步取决于 PnP 定位精度。已知相机内参矩阵
+$K$，先把像素点去畸变后反投影为相机坐标系下的一条视线方向
+$\bm{r}=\mathrm{undistort}(K^{-1}\bm{p})$，再令该视线与相机系下的成像面求交。
+若成像面方程为 $\bm{n}^\mathsf{T}\bm{x}+d=0$，视线为 $\bm{x}=\lambda\bm{r}$，则
+交点参数与相机系下的实像点为
+\begin{equation}
+\label{eq:intersect}
+\lambda = -\frac{d}{\bm{n}^\mathsf{T}\bm{r}}, \qquad
+P_{\mathrm{real}}^{\text{cam}} = \lambda\bm{r}.
+\end{equation}
+再由 PnP 标定得到的相机到取景框局部系的刚体位姿，把实像点从相机系转入各自取景框
+局部系：前相机点经 $T_{C_1\to\text{frame}_f}$ 转入前框局部系，后相机点经
+$T_{C_2\to\text{frame}_b}$ 转入后框局部系。反投影与位姿对齐共用同一套 PnP 标定
+结果，误差同源。
+
+\subsubsection{坐标统一与镜面重建}
+本步取决于设备几何尺寸的测量与安装精度。前取景框局部系即取为设备系 $D$，故前框
+实像点已在设备系中；后框实像点再经后框到前框的 6DOF 装配变换 $T_{b\to f}$ 并入
+设备系：
+\begin{equation}
+\label{eq:to_device}
+P^f_{\mathrm{real}} = P^{f,\text{frame}_f}_{\mathrm{real}}, \qquad
+P^b_{\mathrm{real}} = T_{b\to f}\, P^{b,\text{frame}_b}_{\mathrm{real}}.
+\end{equation}
+随后在设备坐标系下，把两个实像点分别关于对应反射面做镜面反射，还原激光被折射前
+的位置。若反射面方程为 $\bm{n}^\mathsf{T}\bm{x}+d=0$，则点 $\bm{x}$ 的镜像点为
+\begin{equation}
+\label{eq:mirror}
+\bm{x}_{\mathrm{mirror}} = \bm{x} - 2(\bm{n}^\mathsf{T}\bm{x}+d)\,\bm{n},
+\end{equation}
+于是
+\begin{equation}
+\label{eq:virtual}
+\begin{aligned}
+P^f_{\mathrm{virtual}} &= \mathrm{mirror}(P^f_{\mathrm{real}}, M_f), \\
+P^b_{\mathrm{virtual}} &= \mathrm{mirror}(P^b_{\mathrm{real}}, M_b),
+\end{aligned}
+\end{equation}
+其中 $M_f$、$M_b$ 为设备系下的前、后反射面。反射镜两面平行度极高，建模时用单面
+近似，忽略镜片厚度带来的折射偏置。装配变换与反射面同为设备几何量，误差同源。
+
+\subsubsection{点线距离结算}
+本步是最终的距离结算，仅由前三步的输出解析地算得，本身不引入独立误差，其误差
+完全由前三步传递而来。前、后两个虚像点确定了激光基准轴的空间直线。记方向向量
+$\bm{L}=P^f_{\mathrm{virtual}}-P^b_{\mathrm{virtual}}$ 与
+$\bm{w}=P_T-P^b_{\mathrm{virtual}}$，目标点 $P_T$ 到该直线的垂直距离由叉积公式
+给出：
+\begin{equation}
+\label{eq:distance}
+H = \frac{\lVert \bm{L}\times\bm{w}\rVert}{\lVert \bm{L}\rVert}.
+\end{equation}
+目标点由设备几何中的测杆直接给定，$P_T=(x_0,y_0,z_0-l_T)^\mathsf{T}$，其中
+$(x_0,y_0,z_0)$ 为杆根安装位置，$l_T$ 为测杆长度、靶点沿 $Z$ 负向延伸。
+图~\ref{fig:principle} 给出上述链路的几何示意。
+
+\begin{figure}[t]
+\centering
+% 优先复用 docs/原理图.png；若清晰度不足需重画，见 \todo
+\includegraphics[width=\columnwidth]{原理图.png}
+\caption{DCPAM 测量原理示意：激光经前后倾斜反射镜折向各自毛玻璃接收屏，
+相机拍摄光斑实像，经镜面反射还原为设备坐标系下的虚像点，确定激光基准轴并计算
+目标点垂距。\todo{按最终版式重绘为矢量图并统一符号}}
+\label{fig:principle}
+\end{figure}
+
+\subsection{标定}
+\label{subsec:calib}
+
+模型依赖三类标定。第一类是相机内参：采用 OpenCV 针孔模型，标定焦距
+$f_x,f_y$、主点 $(c_x,c_y)$ 与畸变系数 $k_1,k_2,p_1,p_2$，构成内参矩阵
+$K=\left[\begin{smallmatrix} f_x&0&c_x\\ 0&f_y&c_y\\ 0&0&1\end{smallmatrix}\right]$，
+用于式~\eqref{eq:intersect} 的反投影。第二类是相机与取景框之间的位姿，采用五
+圆点 PnP 定位法：每个取景成像面上贴五个黑色圆点，其在成像面局部系下的三维坐标
+由影像仪测出作为物点，标定时从相机图像中提取五个圆心像素与物点做 PnP，解出相机
+到取景框局部系的刚体位姿，即式~\eqref{eq:intersect} 之后转入局部系所需
+的 $T_{C_1\to\text{frame}_f}$ 与 $T_{C_2\to\text{frame}_b}$，同时得到相机系下的成像面平面。
+第三类是设备几何，包括设备系下的前、后反射面、后框到前框的装配变换 $T_{b\to f}$
+以及测杆的杆根位置与长度，由人工测量结合影像仪与
+关节臂实测确定。需要说明的是，历史上曾用双相机外参做坐标统一，但微距镜头下两相机
+无法对同一成像面合焦、外参可靠性不足，因此主链路改用上述以设备坐标系为中心的
+标定方案，不再依赖双相机外参。
+
+\subsection{端到端仿射形式}
+
+把式~\eqref{eq:pixel}--\eqref{eq:virtual} 的反投影、坐标统一与镜面反射整条链路
+组合起来，在局部小扰动范围内，每个虚像点的坐标都是对应像素坐标的仿射函数：
+\begin{equation}
+\label{eq:affine_f}
+\begin{aligned}
+x_f &= A_1 u_1 + B_1 v_1 + C_1, \\
+y_f &= D_1 u_1 + E_1 v_1 + F_1, \\
+z_f &= G_1 u_1 + H_1 v_1 + I_1,
+\end{aligned}
+\end{equation}
+后虚像点 $(x_b,y_b,z_b)$ 关于 $(u_2,v_2)$ 有同样形式，系数 $A_1,\dots,I_2$ 由
+复合矩阵乘积确定。据此可得一个对精度分析很有用的结论：距离 $H$ 的绝对值随测杆
+长度 $l_T$ 改变，但当 $l_T$ 固定时，由像素提取噪声引起的距离变化量 $\Delta H$
+几乎不依赖 $l_T$，仅由像素噪声与系统系数决定。这一线性化关系是第~\ref{sec:exp}
+节误差传播与灵敏度分析的基础。

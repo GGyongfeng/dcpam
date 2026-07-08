@@ -1,0 +1,50 @@
+%% DCPAM —— 中文初稿（IEEE TIM 目标期刊，双栏 IEEEtran）
+%% 编译：XeLaTeX（TinyTeX），建议 latexmk -xelatex main.tex
+%% 说明：本文件为中文初稿，用于内容与逻辑打磨；后续将翻译为英文并套用最终期刊模板。
+%%       未定的实验数值统一以「[待补：…]」占位，切勿视为真实结果。
+
+\documentclass[journal]{IEEEtran}
+
+% --- 中文支持（XeLaTeX + ctex）---
+\usepackage{ctex}
+
+% --- 常用宏包 ---
+\usepackage{amsmath,amsfonts,amssymb}
+\usepackage{bm}
+\usepackage{graphicx}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{url}
+\usepackage{cite}
+
+% 图片搜索路径：直接复用 docs/ 下的原理图
+\graphicspath{{figures/}{../docs/}}
+
+% 占位命令：初稿中所有待补数值/内容用 \todo{...} 高亮标注
+\newcommand{\todo}[1]{{\bfseries[待补：#1]}}
+
+\begin{document}
+
+\title{DCPAM：基于双相机与激光基准线的\\
+点到轴距离测量模型}
+
+\author{\todo{作者列表与单位}
+\thanks{本文面向大型转动设备轴系对中的高精度非接触测量。}%
+\thanks{稿件日期：\todo{投稿日期}。}}
+
+\markboth{IEEE Transactions on Instrumentation and Measurement（中文初稿）}%
+{DCPAM：基于双相机与激光基准线的点到轴距离测量模型}
+
+\maketitle
+
+\input{sections/00_abstract}
+\input{sections/01_intro}
+\input{sections/02_related}
+\input{sections/03_model}
+\input{sections/04_experiment}
+\input{sections/05_conclusion}
+
+\bibliographystyle{IEEEtran}
+\bibliography{refs}
+
+\end{document}
