@@ -5,6 +5,21 @@
 # frame_surfaces / camera_to_frame：由 5 圆点 PnP 标定得到（scripts/pnp/pnp_定位.py 自动写入）。
 # geometry：设备物理几何，人工测量填写。
 
+[camera.front]
+# 关掉 auto，避免光强变化触发 AE 收敛导致的帧率抖动
+# exposure_time 单位微秒（μs），gain 单位 dB
+# 若画面偏暗/过曝可微调 exposure_time，或临时置 exposure_auto = true 让相机先收敛，再取该值写死
+exposure_auto = false
+gain_auto = false
+exposure_time = 10000
+gain = 0.0
+
+[camera.rear]
+exposure_auto = false
+gain_auto = false
+exposure_time = 10000
+gain = 0.0
+
 [pipeline.spot_extraction]
 method = "improved_circle_fit"
 gaussian_kernel = 9

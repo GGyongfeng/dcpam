@@ -228,17 +228,20 @@ class _DualCameraAravis:
     def _apply_hardware(self, camera: "Aravis.Camera", hw: SingleCameraHardware) -> None:
         arv = _get_aravis()
 
+        # exposure_auto=False 必须显式关 AE，即便没给 exposure_time
         if hw.exposure_auto:
             camera.set_exposure_time_auto(arv.Auto.CONTINUOUS)
-        elif hw.exposure_time is not None:
+        else:
             camera.set_exposure_time_auto(arv.Auto.OFF)
-            camera.set_exposure_time(hw.exposure_time)
+            if hw.exposure_time is not None:
+                camera.set_exposure_time(hw.exposure_time)
 
         if hw.gain_auto:
             camera.set_gain_auto(arv.Auto.CONTINUOUS)
-        elif hw.gain is not None:
+        else:
             camera.set_gain_auto(arv.Auto.OFF)
-            camera.set_gain(hw.gain)
+            if hw.gain is not None:
+                camera.set_gain(hw.gain)
 
     def _grab_frame(self, handle: _AravisHandle) -> np.ndarray:
         arv = _get_aravis()
@@ -373,24 +376,39 @@ class _DualCameraDaheng:
 
     @staticmethod
     def _apply_hardware(gx, camera, hw: SingleCameraHardware) -> None:
+        # 曝光：exposure_auto=False 必须显式关掉 AE，即便没给 exposure_time
+        # （不然相机保留上一次的 AE 状态，光强变化时仍会收敛，卡顿依旧）
         if hw.exposure_auto:
             if camera.ExposureAuto.is_implemented() and camera.ExposureAuto.is_writable():
                 camera.ExposureAuto.set(gx.GxAutoEntry.CONTINUOUS)
-        elif hw.exposure_time is not None and camera.ExposureTime.is_writable():
-            if camera.ExposureAuto.is_writable():
+        else:
+            if camera.ExposureAuto.is_implemented() and camera.ExposureAuto.is_writable():
                 camera.ExposureAuto.set(gx.GxAutoEntry.OFF)
-            camera.ExposureTime.set(float(hw.exposure_time))
+            if hw.exposure_time is not None and camera.ExposureTime.is_writable():
+                camera.ExposureTime.set(float(hw.exposure_time))
 
         if hw.gain_auto:
             if camera.GainAuto.is_implemented() and camera.GainAuto.is_writable():
                 camera.GainAuto.set(gx.GxAutoEntry.CONTINUOUS)
-        elif hw.gain is not None and camera.Gain.is_writable():
-            if camera.GainAuto.is_writable():
+        else:
+            if camera.GainAuto.is_implemented() and camera.GainAuto.is_writable():
                 camera.GainAuto.set(gx.GxAutoEntry.OFF)
-            camera.Gain.set(float(hw.gain))
+            if hw.gain is not None and camera.Gain.is_writable():
+                camera.Gain.set(float(hw.gain))
 
     def _grab_frame(self, handle: _DahengHandle) -> np.ndarray:
-        raw = handle.camera.data_stream[0].get_image(timeout=2000)
+        # gxipy 的 data_stream 是 FIFO，消费不上时会累积几百 ms 的滞后。
+        # 抓帧前用非阻塞 get_image(timeout=0) 排空队列，只留最新的一帧供消费；
+        # 队列为空才用 2s 超时阻塞等一帧新的从传感器出来。
+        ds = handle.camera.data_stream[0]
+        latest = None
+        while True:
+            stale = ds.get_image(timeout=0)
+            if stale is None:
+                break
+            latest = stale
+
+        raw = latest if latest is not None else ds.get_image(timeout=2000)
         if raw is None:
             raise RuntimeError(f"{handle.name} 相机帧获取超时")
 
