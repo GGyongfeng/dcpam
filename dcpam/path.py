@@ -19,6 +19,10 @@ class DCPAMPaths:
         return self.root / "config.toml"
 
     @property
+    def camera_file(self) -> Path:
+        return self.root / "camera.toml"
+
+    @property
     def pnp_file(self) -> Path:
         return self.root / "pnp.toml"
 
