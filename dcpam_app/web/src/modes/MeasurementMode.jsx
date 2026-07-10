@@ -3,6 +3,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { SamplingHistory } from "../components/SamplingHistory.jsx";
 import { PreviewSettings } from "../components/Switchers.jsx";
 import { AppShell } from "../layout/AppShell.jsx";
+import { buildGeometry } from "../geometry.js";
+import { aggregateDistance } from "../pipeline.js";
 import { useStoredText } from "../storage.js";
 
 const STORAGE_KEYS = {
@@ -10,8 +12,13 @@ const STORAGE_KEYS = {
   sampleName: "dcpam.measure.sampleName",
 };
 
+const DEFAULT_ALGORITHM = {
+  imageAlignment: "pnp",
+  reflectionSource: "device",
+};
 
-export function MeasurementMode({ mode, setMode }) {
+
+export function MeasurementMode({ mode, setMode, tomlConfig }) {
   const [captureN, setCaptureN] = useStoredText(STORAGE_KEYS.captureN);
   const [sampleName, setSampleName] = useStoredText(STORAGE_KEYS.sampleName);
   const [sampleIndex, setSampleIndex] = useState(1);
@@ -274,6 +281,32 @@ export function MeasurementMode({ mode, setMode }) {
     );
   }, [orderedRecords, filter]);
 
+  const geometry = useMemo(() => {
+    if (!tomlConfig) return null;
+    try {
+      return buildGeometry(tomlConfig, DEFAULT_ALGORITHM);
+    } catch (_) {
+      return null;
+    }
+  }, [tomlConfig]);
+
+  const resultsById = useMemo(() => {
+    if (!geometry || !tomlConfig) return {};
+    const out = {};
+    for (const record of orderedRecords) {
+      const agg = aggregateDistance(record, geometry, tomlConfig);
+      if (agg && agg.nUsed > 0 && Number.isFinite(agg.distanceMean)) {
+        out[record.id] = {
+          distanceMean: agg.distanceMean,
+          distanceStd: agg.distanceStd,
+          nUsed: agg.nUsed,
+          nTotal: agg.nTotal,
+        };
+      }
+    }
+    return out;
+  }, [orderedRecords, geometry, tomlConfig]);
+
   useEffect(() => {
     if (!records.length) {
       setSelectedId((current) => (current ? "" : current));
@@ -412,6 +445,7 @@ export function MeasurementMode({ mode, setMode }) {
           onCreateGroup={handleCreateGroup}
           groups={groups}
           listStatus={listStatus}
+          resultsById={resultsById}
         />
       }
       mainSlot={
