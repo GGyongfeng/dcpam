@@ -88,6 +88,11 @@ dataset/
 captures/
 backup/
 
+# DCPAM 运行时数据（DCPAMPaths 平铺在仓库根）
+measurements/
+config_backups/
+pictures/
+
 # Reference materials (templates, calibration files)
 reference/
 

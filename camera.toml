@@ -1,6 +1,3 @@
-# DCPAM 相机硬件参数 —— 请把本文件复制/填写为 ~/.dcpam/camera.toml 后再运行测量。
-# 与标定 / 几何解耦：PnP 标定脚本重写 config.toml 时不会影响这里的相机参数。
-
 [camera.front]
 # 关掉 auto，避免光强变化触发 AE 收敛导致的帧率抖动
 # exposure_time 单位微秒（μs），gain 单位 dB

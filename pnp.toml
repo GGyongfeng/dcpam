@@ -1,5 +1,5 @@
-# DCPAM PnP 标定模板 —— 请把本文件复制/填写为 ~/.dcpam/pnp.toml 后再运行标定。
-# points 为占位（全 0），必须替换为影像仪实测的 5 圆点局部坐标。
+# DCPAM PnP 标定模板 —— 需填入影像仪实测的 5 圆点局部坐标后再运行标定。
+# points 为占位（全 0），必须替换为真实值。
 #
 # 用途：scripts/pnp/pnp_定位.py 用这里的 points 作为 object points 做 PnP，
 # 解出「相机→成像面局部系」写入 config.toml.calibration.{front,rear}_camera_to_frame。

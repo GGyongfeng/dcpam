@@ -104,18 +104,20 @@ uv run dcpam
 
 ## 运行时数据目录
 
-运行时的配置与数据都在 `~/.dcpam/`（跨项目共享，不随代码仓库走）：
+运行时的配置与数据都平铺在仓库根目录：
 
 ```
-~/.dcpam/
-├── config.toml          # 设备几何 / 标定配置
-├── pnp.toml             # PnP 圆点约定
-├── measurements/        # 每次采样一个子目录（图片 + sample.json）
-├── config_backups/      # config.toml 的自动备份
-└── captures/            # 单次抓帧调试图
+<repo root>/
+├── camera.toml         # 相机硬件参数（AE/AG/曝光/增益）
+├── config.toml         # 设备几何 / 标定配置
+├── pnp.toml            # PnP 圆点约定
+├── measurements/       # 每次采样一个子目录（图片 + sample.json）
+├── config_backups/     # config.toml 的自动备份
+├── captures/           # 单次抓帧调试图
+└── pictures/           # scripts/capture_once.py 的采集图像
 ```
 
-项目仓库根目录只保留 `config.toml` / `pnp.toml` 的**模板**，供首次填写参考。
+三份 `*.toml` 在仓库里带占位模板，首次使用请填入真实标定值。
 
 ## 常用命令与开关
 
@@ -135,7 +137,7 @@ DCPAM_HOST=0.0.0.0 DCPAM_PORT=9000 uv run dcpam   # 自定义后端地址/端口
 
 ```bash
 uv run python scripts/check_camera_env.py   # 自检 SDK / 相机可达性
-uv run python scripts/capture_once.py       # 单次抓一对帧到 ~/.dcpam/pictures/
+uv run python scripts/capture_once.py       # 单次抓一对帧到 <repo>/pictures/
 ```
 
 ## Windows 说明
@@ -156,8 +158,8 @@ Windows 走大恒 Galaxy SDK，**无需** Aravis / sudo 网卡免密那套：
   - `dcpam_app/desktop/`：桌面程序（预留，将来 pywebview + PyInstaller 打包 exe）
 - `scripts/`：可直接运行的脚本
 - `exp/`：降方差优化实验记录
-- `data/`：（已废弃）运行时数据现统一在 `~/.dcpam/`，不再放仓库内
-- `pictures/`：（运行时目录 `~/.dcpam/pictures/`）`scripts/capture_once.py` 的采集图像保存目录
+- `data/`：（已废弃）运行时数据现平铺在仓库根，不再嵌到 `data/` 下
+- `pictures/`：`scripts/capture_once.py` 的采集图像保存目录（仓库根下，已在 .gitignore）
 - `docs/`：项目说明与规范文档
 
 ## 许可证

@@ -1,17 +1,18 @@
 from pathlib import Path
 
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
 
 class DCPAMPaths:
     """DCPAM 运行时配置与数据路径管理。
 
-    全局根目录 = ~/.dcpam（跨项目共享，不随代码仓库走）。
-    配置文件（config.toml / pnp.toml）与运行数据（measurements / config_backups）
-    都平铺在此根下。项目仓库根目录只保留 config.toml / pnp.toml 的**模板**，
-    供首次填写参考。
+    根目录 = 项目仓库根（dcpam/ 的上一级）。配置文件
+    （config.toml / camera.toml / pnp.toml）与运行数据
+    （measurements / config_backups / captures / pictures）都平铺在此根下。
     """
 
     def __init__(self, root: Path | None = None):
-        self.root = root or Path.home() / ".dcpam"
+        self.root = root or _PROJECT_ROOT
 
     # ---- 配置文件 ----
     @property

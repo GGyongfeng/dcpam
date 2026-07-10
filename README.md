@@ -106,18 +106,20 @@ Day-to-day it is just: **plug cable → click the bolt → capture** — no back
 
 ## Runtime data directory
 
-Runtime config and data live under `~/.dcpam/` (shared across projects, not in the repo):
+Runtime config and data live directly at the repo root:
 
 ```
-~/.dcpam/
-├── config.toml          # device geometry / calibration
-├── pnp.toml             # PnP circle conventions
-├── measurements/        # one subdir per capture (images + sample.json)
-├── config_backups/      # automatic backups of config.toml
-└── captures/            # single-shot debug frames
+<repo root>/
+├── camera.toml         # camera hardware params (AE/AG/exposure/gain)
+├── config.toml         # device geometry / calibration
+├── pnp.toml            # PnP circle conventions
+├── measurements/       # one subdir per capture (images + sample.json)
+├── config_backups/     # automatic backups of config.toml
+├── captures/           # single-shot debug frames
+└── pictures/           # scripts/capture_once.py debug captures
 ```
 
-The repo root only keeps **templates** of `config.toml` / `pnp.toml` for first-time reference.
+The three `*.toml` files ship as placeholder templates — fill in real calibration values before first use.
 
 ## Common commands and switches
 
@@ -138,7 +140,7 @@ Optional debug scripts:
 
 ```bash
 uv run python scripts/check_camera_env.py   # self-check SDK / camera reachability
-uv run python scripts/capture_once.py       # grab one frame pair to ~/.dcpam/pictures/
+uv run python scripts/capture_once.py       # grab one frame pair to <repo>/pictures/
 ```
 
 ## Windows notes
