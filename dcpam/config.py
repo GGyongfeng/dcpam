@@ -135,11 +135,25 @@ class AppConfig(BaseModel):
 
 
 def load_config(path: Path) -> AppConfig:
-    """加载统一配置文件。"""
+    """加载统一配置文件。
+
+    相机参数与标定 / 几何解耦：`config.toml` 里的 `[camera.*]` 段仅作向后兼容，
+    若同目录下存在 `camera.toml`（顶层为 [front] / [rear]），以它为准 —— 这样
+    PnP 标定脚本重写 `config.toml` 时不会影响相机参数。
+    """
     if not path.exists():
         raise FileNotFoundError(f"配置文件不存在: {path}")
     with open(path, "rb") as file:
-        return AppConfig(**tomllib.load(file))
+        data = tomllib.load(file)
+
+    camera_file = path.parent / "camera.toml"
+    if camera_file.exists():
+        with open(camera_file, "rb") as file:
+            camera_raw = tomllib.load(file)
+        # 兼容两种写法：顶层 [front]/[rear]，或与 config.toml 对齐的 [camera.front]/[camera.rear]。
+        data["camera"] = camera_raw.get("camera", camera_raw)
+
+    return AppConfig(**data)
 
 
 def load_camera_config(path: Path) -> CameraConfig:

@@ -319,10 +319,21 @@ def main() -> None:
     if hasattr(signal, "SIGHUP"):
         signal.signal(signal.SIGHUP, _on_terminal_signal)
     signal.signal(signal.SIGTERM, _on_terminal_signal)
+    # Windows Ctrl+Break 也当退出信号处理，行为对齐 Ctrl+C
+    if hasattr(signal, "SIGBREAK"):
+        signal.signal(signal.SIGBREAK, _on_terminal_signal)
 
     console.print("  [dim]Ctrl+C 退出[/]")
+    # Windows 上 Popen.wait() 无超时时走 WaitForSingleObject(INFINITE)，
+    # 不 alertable —— Ctrl+C 只置位 SIGINT-pending 标记，主线程卡在 native
+    # 调用里不推进字节码，KeyboardInterrupt 永远不会被抛出。用短超时轮询让
+    # 主线程周期性回到解释器，pending 信号才能被处理。
     try:
-        frontend.wait()
+        while frontend.poll() is None:
+            try:
+                frontend.wait(timeout=0.5)
+            except subprocess.TimeoutExpired:
+                continue
     except KeyboardInterrupt:
         console.print("\n  [dim]正在关闭...[/]")
         _shutdown()
