@@ -85,6 +85,7 @@ Thumbs.db
 
 output/
 dataset/
+dataset/samples/_annotated/  # 光斑提取标注图（exp/centroid/annotate.py 生成）
 captures/
 backup/
 
