@@ -89,6 +89,8 @@ class CalibrationConfig(BaseModel):
 
 class SpotExtractionConfig(BaseModel):
     """光斑提取参数。"""
+    # 定位法：contour_ellipse（别名 improved_circle_fit，默认）/ plateau_centroid /
+    # gaussian_skirt。分发见 dcpam/steps/spot_extraction.py::_locate_by_method。
     method: str = "improved_circle_fit"
     gaussian_kernel: int = 9
     gaussian_sigma: float = 2.0

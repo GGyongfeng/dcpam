@@ -1,4 +1,5 @@
 [pipeline.spot_extraction]
+# 光斑定位法：contour_ellipse(默认,~106μm) / plateau_centroid(~105μm) / gaussian_skirt(~111μm)
 method = "improved_circle_fit"
 gaussian_kernel = 9
 gaussian_sigma = 2.0

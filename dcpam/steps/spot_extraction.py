@@ -13,12 +13,22 @@ from ..types import Point2D, SpotPair
 #   INTENSITY_FLOOR    = 30：真光斑 peak=255，全黑噪声 peak=8-11；30 是安全下限
 #   SATURATION_CEIL    = 15%：0701 高曝光批次真光斑 mask 5-12%，饱和取景框 ≥ 30%；
 #                             15% 仍能干净分离两类（旧值 5% 会误杀高曝光真光斑）
-#   LOCAL_WINDOW_HALF  = 150 px：光斑大而饱和（半径约 120px），窗口须罩住整斑。
-#                             旧值 30px 只框住中心，配合低阈值会让重心被拖尾拉偏
-#                             （见 scripts/exp/exp_b_centroid.md：窗口+阈值联合使 σ 腰斩）。
+#   LOCAL_WINDOW_HALF  = 150 px：旧"峰值±窗口加权重心"的窗口半宽。生产已弃用
+#                             （改连通域轮廓拟合，见 _locate_by_contour），此常量
+#                             仅保留供 exp/centroid 分析脚本画旧窗口对照。
 INTENSITY_FLOOR = 30.0
 SATURATION_CEIL = 0.15
 LOCAL_WINDOW_HALF = 150
+
+# 高斯裙边拟合（method="gaussian_skirt"）ROI 参数：
+#   GAUSSIAN_CORE_THR = 0.8：先取含峰值的高阈值连通域作「核」——背景远低于它，
+#                            绝不会顺着微弱光晕 balloon 到整帧（旧低阈值全局洪水会，
+#                            曾把某图中心拉飞，见提交说明）。
+#   GAUSSIAN_ROI_PAD  = 6 px：核包围盒外扩这么多得到有界 ROI，只在框内拟合裙边。
+#                            远裙边不对称会抬高方差，故取小。实测该组合 σ≈111μm。
+GAUSSIAN_CORE_THR = 0.8
+GAUSSIAN_ROI_PAD = 6
+GAUSSIAN_SKIRT_FLOOR = 0.15
 
 
 @dataclass
@@ -76,18 +86,19 @@ def extract_spots(
 def _extract_single(
     image: np.ndarray, config: SpotExtractionConfig
 ) -> tuple[tuple[float, float], SpotQuality]:
-    """局部窗口加权重心提取光斑中心，返回 (u, v) 与质量指标。
+    """连通域轮廓拟合提取光斑中心，返回 (u, v) 与质量指标。
 
     步骤：
     1. 高斯模糊。
-    2. cv2.minMaxLoc 找全局峰值位置——这是唯一物理上有意义的候选中心。
+    2. cv2.minMaxLoc 找全局峰值位置——仅用于选定"含峰值的连通域"，不再当中心。
     3. 硬门槛（防止在垃圾图上返回伪坐标）：
        - max_val < INTENSITY_FLOOR：几乎全黑，只有传感器噪声，抛异常。
        - 全局 mask 占比 > SATURATION_CEIL：大面积饱和（拍到取景框而非圆版），抛异常。
-    4. 在峰值 ±LOCAL_WINDOW_HALF(150px) 窗口内做加权重心。窗口须罩住整个光斑
-       （半径约 120px），既排除远处散乱噪声，又不因窗口过小切掉光斑主体；
-       配合高阈值(centroid_threshold≈0.8)切掉不对称拖尾，避免重心被拉偏
-       （见 scripts/exp/exp_b_centroid.md）。
+    4. 光斑定位：按 config.method 分发（见 _locate_by_method）。可选：
+       - "contour_ellipse"（别名 "improved_circle_fit"，默认）：含峰值连通域椭圆拟合。
+       - "plateau_centroid"：饱和平台(=255)几何质心，实测最优档 ~105μm。
+       - "gaussian_skirt"：排除饱和像素的 2D 高斯裙边拟合，取解析峰值。
+       三者组内 σ 对比见 exp/centroid。
     5. quality 仍用全局 mask 计算，用来在 UI 层再兜一层"无效采样"的判断。
     """
     blurred = cv2.GaussianBlur(
@@ -119,26 +130,180 @@ def _extract_single(
             f"{SATURATION_CEIL:.0%}，视野内不是圆版"
         )
 
-    # 局部窗口重心
-    height, width = blurred.shape[:2]
-    y0 = max(0, peak_y - LOCAL_WINDOW_HALF)
-    y1 = min(height, peak_y + LOCAL_WINDOW_HALF + 1)
-    x0 = max(0, peak_x - LOCAL_WINDOW_HALF)
-    x1 = min(width, peak_x + LOCAL_WINDOW_HALF + 1)
-
-    window = blurred[y0:y1, x0:x1]
-    window_mask = window > threshold
-    if not np.any(window_mask):
-        raise ValueError("光斑提取失败：峰值周围窗口内无有效像素")
-
-    ys_local, xs_local = np.where(window_mask)
-    weights = window[ys_local, xs_local].astype(np.float64)
-    total = weights.sum()
-    u = float(((xs_local + x0) * weights).sum() / total)
-    v = float(((ys_local + y0) * weights).sum() / total)
+    u, v = _locate_by_method(image, blurred, global_mask, peak_x, peak_y, config)
 
     quality = _compute_quality(blurred, global_mask, u, v, max_val)
     return (u, v), quality
+
+
+def _locate_by_method(
+    image: np.ndarray,
+    blurred: np.ndarray,
+    global_mask: np.ndarray,
+    peak_x: int,
+    peak_y: int,
+    config: SpotExtractionConfig,
+) -> tuple[float, float]:
+    """按 config.method 选择定位算法。未知方法抛异常（防配置写错静默走默认）。"""
+    method = (config.method or "").strip().lower()
+    if method in ("contour_ellipse", "improved_circle_fit"):
+        return _locate_by_contour(blurred, global_mask, peak_x, peak_y)
+    if method == "plateau_centroid":
+        return _locate_by_plateau(image, global_mask, peak_x, peak_y)
+    if method == "gaussian_skirt":
+        return _locate_by_gaussian(image, blurred, peak_x, peak_y)
+    raise ValueError(
+        f"未知的光斑提取方法 method={config.method!r}；可选："
+        "contour_ellipse / plateau_centroid / gaussian_skirt"
+    )
+
+
+def _locate_by_contour(
+    blurred: np.ndarray, global_mask: np.ndarray, peak_x: int, peak_y: int
+) -> tuple[float, float]:
+    """在含峰值的连通域上定位光斑中心。
+
+    优先 cv2.fitEllipse（对不圆光斑最鲁棒，实测最优）；轮廓点 < 5 或拟合异常时
+    回退到连通域几何形心（不加权的坐标均值，实测精度几乎等同且无失败风险）。
+
+    连通域天然是自适应窗口：随光斑实际大小伸缩，不依赖峰值点位置，
+    因此不受"峰值偏上"影响。
+    """
+    mask_u8 = global_mask.astype(np.uint8)
+    num, labels, _, _ = cv2.connectedComponentsWithStats(mask_u8, 8)
+    peak_label = int(labels[peak_y, peak_x])
+    if peak_label == 0:
+        # 峰值不在任何前景块内（理论上不会发生，因 threshold < peak）——兜底用峰值
+        raise ValueError("光斑提取失败：峰值不在任何阈值连通域内")
+
+    component = (labels == peak_label).astype(np.uint8)
+    ys, xs = np.where(component)
+
+    # 几何形心（回退值，同时用于椭圆失败时）
+    geom_u = float(xs.mean())
+    geom_v = float(ys.mean())
+
+    # 椭圆拟合：对连通域外轮廓 fitEllipse，取椭圆中心
+    contours, _ = cv2.findContours(
+        component, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE
+    )
+    if contours:
+        contour = max(contours, key=cv2.contourArea)
+        if len(contour) >= 5:
+            try:
+                (cx, cy), _axes, _angle = cv2.fitEllipse(contour)
+                # 合理性校验：椭圆中心应落在连通域包围盒内，否则视为病态拟合
+                if xs.min() <= cx <= xs.max() and ys.min() <= cy <= ys.max():
+                    return float(cx), float(cy)
+            except cv2.error:
+                pass
+
+    return geom_u, geom_v
+
+
+def _locate_by_plateau(
+    image: np.ndarray, global_mask: np.ndarray, peak_x: int, peak_y: int,
+    sat_level: int = 255,
+) -> tuple[float, float]:
+    """饱和平台几何质心：含峰值连通域内 =sat_level 像素的坐标均值。
+
+    重度饱和下核心大且近正圆、质心极稳，又完全避开不对称脏裙边，实测 ~105μm
+    （见 exp/centroid）。无平台（未来不饱和图）时回退连通域几何形心。
+    """
+    _, labels, _, _ = cv2.connectedComponentsWithStats(global_mask.astype(np.uint8), 8)
+    peak_label = int(labels[peak_y, peak_x])
+    if peak_label == 0:
+        raise ValueError("光斑提取失败：峰值不在任何阈值连通域内")
+    component = labels == peak_label
+    plateau = (image >= sat_level) & component
+    ys, xs = np.where(plateau) if plateau.any() else np.where(component)
+    return float(xs.mean()), float(ys.mean())
+
+
+def _gauss2d(xy, B, A, mx, my, sx, sy):
+    """2D 轴对齐椭圆高斯：I = B + A·exp(-((x-mx)²/2sx² + (y-my)²/2sy²))。"""
+    x, y = xy
+    return B + A * np.exp(-(((x - mx) ** 2) / (2 * sx ** 2) + ((y - my) ** 2) / (2 * sy ** 2)))
+
+
+def _locate_by_gaussian(
+    image: np.ndarray, blurred: np.ndarray, peak_x: int, peak_y: int,
+    core_thr: float = GAUSSIAN_CORE_THR, roi_pad: int = GAUSSIAN_ROI_PAD,
+    skirt_floor: float = GAUSSIAN_SKIRT_FLOOR, sat_level: int = 255,
+    max_pts: int = 6000,
+) -> tuple[float, float]:
+    """排除饱和像素的 2D 椭圆高斯拟合，取解析峰值 μ 作光斑中心。
+
+    有平台→剔除=255像素靠裙边外推峰值；无平台→全像素参与，一套逻辑兼容两种图。
+
+    ROI 用「稳健核 + 有界外扩」而非低阈值全局洪水：先取含峰值的高阈值连通域
+    （core_thr，背景远低于它、绝不 balloon）作核，把包围盒外扩 roi_pad 得到有界
+    ROI，只在框内按 skirt_floor 取局部连通域拟合。避免低阈值洪水顺微弱光晕蔓延到
+    整帧、把中心拉飞。拟合失败/病态回退：核内饱和平台质心，否则核几何形心。
+    实测 σ≈111μm（见提交说明）。
+    """
+    from scipy.optimize import curve_fit  # 延迟导入：非该方法时不加载 scipy
+
+    b = blurred
+    mx = float(b.max())
+    core = (b > mx * core_thr).astype(np.uint8)
+    _, labels, _, _ = cv2.connectedComponentsWithStats(core, 8)
+    lab = int(labels[peak_y, peak_x])
+    if lab == 0:
+        raise ValueError("光斑提取失败：峰值不在高阈值连通域内")
+    core_mask = labels == lab
+    cys, cxs = np.where(core_mask)
+    cu, cv = float(cxs.mean()), float(cys.mean())
+    area = int(core_mask.sum())
+
+    def _fallback() -> tuple[float, float]:
+        plateau = (image >= sat_level) & core_mask
+        if plateau.any():
+            pys, pxs = np.where(plateau)
+            return float(pxs.mean()), float(pys.mean())
+        return cu, cv
+
+    # 有界 ROI：核包围盒外扩 roi_pad
+    x0, y0 = max(0, int(cxs.min()) - roi_pad), max(0, int(cys.min()) - roi_pad)
+    x1 = min(b.shape[1] - 1, int(cxs.max()) + roi_pad)
+    y1 = min(b.shape[0] - 1, int(cys.max()) + roi_pad)
+    roi = b[y0:y1 + 1, x0:x1 + 1].astype(np.float64)
+    roi_raw = image[y0:y1 + 1, x0:x1 + 1]
+
+    # ROI 内按 skirt_floor 取含峰值的局部连通域（洪水被 ROI 限制，不会蔓延全帧）
+    loc = (roi > mx * skirt_floor).astype(np.uint8)
+    _, loc_labels, _, _ = cv2.connectedComponentsWithStats(loc, 8)
+    lpx, lpy = peak_x - x0, peak_y - y0
+    comp_roi = (loc_labels == loc_labels[lpy, lpx]) if loc_labels[lpy, lpx] != 0 else loc.astype(bool)
+
+    sat = (roi_raw >= sat_level).astype(np.uint8)
+    if sat.any():
+        sat = cv2.dilate(sat, np.ones((5, 5), np.uint8))  # 去掉模糊把255渗进裙边的过渡带
+    keep = comp_roi & (sat == 0)
+
+    gy, gx = np.mgrid[0:roi.shape[0], 0:roi.shape[1]]
+    xk, yk, zk = gx[keep], gy[keep], roi[keep]
+    if zk.size > max_pts:                                # 等距抽样加速（确定性）
+        stride = zk.size // max_pts
+        xk, yk, zk = xk[::stride], yk[::stride], zk[::stride]
+    if zk.size < 20:
+        return _fallback()
+
+    bg = float(np.median(b))
+    r = max(np.sqrt(area / np.pi), 2.0)
+    p0 = [bg, max(mx - bg, 1.0), cu - x0, cv - y0, r / 2, r / 2]
+    lo = [0.0, 1.0, 0.0, 0.0, 1.0, 1.0]
+    hi = [255.0, 1e5, float(roi.shape[1]), float(roi.shape[0]),
+          float(roi.shape[1]), float(roi.shape[0])]
+    try:
+        popt, _ = curve_fit(_gauss2d, np.vstack([xk, yk]), zk, p0=p0,
+                            bounds=(lo, hi), maxfev=20000)
+        _B, _A, mux, muy, _sx, _sy = popt
+        if 0 <= mux <= roi.shape[1] - 1 and 0 <= muy <= roi.shape[0] - 1:
+            return float(mux + x0), float(muy + y0)
+    except Exception:  # noqa: BLE001 - curve_fit 不收敛/奇异都回退
+        pass
+    return _fallback()
 
 
 def _compute_quality(
