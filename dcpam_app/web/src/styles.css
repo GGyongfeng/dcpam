@@ -2351,14 +2351,67 @@ label.config-icon-btn {
   }
 }
 
-/* 相机模块内平铺的预览采集设置：上方一条分隔线与拍照控件区隔开 */
-.camera-preview-settings {
-  margin-top: 4px;
-  padding-top: 14px;
-  border-top: 1px solid var(--line);
+/* 底部巨型测量结果卡：默认占位 000.00，测得后直接显示本次距离 */
+.result-panel {
+  margin-top: 18px;
+  padding: 28px 24px 24px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.result-panel.has-result {
+  border-color: var(--accent);
+  box-shadow: 0 8px 28px rgba(17, 17, 20, 0.10);
+}
+
+.result-panel.is-capturing {
+  opacity: 0.7;
+}
+
+.result-label {
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.result-value {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 10px;
+  line-height: 1;
+}
+
+.result-number {
+  font-family: var(--mono);
+  font-size: clamp(64px, 14vw, 120px);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.result-panel.has-result .result-number {
+  color: var(--text);
+}
+
+.result-unit {
+  font-size: clamp(20px, 3vw, 32px);
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.result-meta {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--muted);
 }
 
 .camera-line {
