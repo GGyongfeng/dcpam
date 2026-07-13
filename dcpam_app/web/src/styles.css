@@ -1134,6 +1134,15 @@ tbody tr:hover td {
   color: var(--muted);
 }
 
+.smooth-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
 .preview-settings-row {
   display: flex;
   flex-direction: column;

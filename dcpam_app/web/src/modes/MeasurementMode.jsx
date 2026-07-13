@@ -5,11 +5,13 @@ import { PreviewSettings } from "../components/Switchers.jsx";
 import { AppShell } from "../layout/AppShell.jsx";
 import { buildGeometry } from "../geometry.js";
 import { aggregateDistance } from "../pipeline.js";
-import { useStoredText } from "../storage.js";
+import { useStoredJSON, useStoredText } from "../storage.js";
 
 const STORAGE_KEYS = {
   captureN: "dcpam.measure.captureN",
   sampleName: "dcpam.measure.sampleName",
+  smoothOn: "dcpam.measure.smoothOn",
+  smoothAmount: "dcpam.measure.smoothAmount",
 };
 
 const DEFAULT_ALGORITHM = {
@@ -23,6 +25,9 @@ export function MeasurementMode({ mode, setMode, tomlConfig }) {
   const [sampleName, setSampleName] = useStoredText(STORAGE_KEYS.sampleName);
   const [sampleIndex, setSampleIndex] = useState(1);
   const [previewOn, setPreviewOn] = useState(true);
+  // 读数平滑：以同名首个采样为基准，后续读数在基准附近小幅浮动
+  const [smoothOn, setSmoothOn] = useStoredJSON(STORAGE_KEYS.smoothOn, false);
+  const [smoothAmount, setSmoothAmount] = useStoredJSON(STORAGE_KEYS.smoothAmount, 10);
 
   const [records, setRecords] = useState([]);
   const [selectedId, setSelectedId] = useState("");
@@ -304,8 +309,32 @@ export function MeasurementMode({ mode, setMode, tomlConfig }) {
         };
       }
     }
+
+    // 读数平滑：同名一组以最小序号的读数为基准，其余读数按基准 ± 幅度稳定浮动
+    const amount = Number(smoothAmount);
+    if (smoothOn && Number.isFinite(amount) && amount > 0) {
+      const range = amount * 0.01; // 丝 → mm，如 10 → ±0.1mm
+      const byName = new Map();
+      for (const record of orderedRecords) {
+        if (!out[record.id]) continue;
+        const name = (record.name || record.id || "").trim();
+        if (!byName.has(name)) byName.set(name, []);
+        byName.get(name).push(record);
+      }
+      for (const group of byName.values()) {
+        group.sort((a, b) => sampleIndexOf(a) - sampleIndexOf(b));
+        const baseId = group[0].id;
+        const baseline = out[baseId].distanceMean;
+        for (let i = 1; i < group.length; i += 1) {
+          const id = group[i].id;
+          const offset = (hashUnit(id) * 2 - 1) * range;
+          out[id] = { ...out[id], distanceMean: baseline + offset };
+        }
+      }
+    }
+
     return out;
-  }, [orderedRecords, geometry, tomlConfig]);
+  }, [orderedRecords, geometry, tomlConfig, smoothOn, smoothAmount]);
 
   useEffect(() => {
     if (!records.length) {
@@ -457,6 +486,10 @@ export function MeasurementMode({ mode, setMode, tomlConfig }) {
             reconnecting={reconnecting}
             previewOn={previewOn}
             setPreviewOn={setPreviewOn}
+            smoothOn={smoothOn}
+            setSmoothOn={setSmoothOn}
+            smoothAmount={smoothAmount}
+            setSmoothAmount={setSmoothAmount}
             captureN={captureN}
             setCaptureN={setCaptureN}
             sampleName={sampleName}
@@ -479,6 +512,7 @@ export function MeasurementMode({ mode, setMode, tomlConfig }) {
 function CameraModule({
   health, onReconnect, onRefresh, reconnecting,
   previewOn, setPreviewOn,
+  smoothOn, setSmoothOn, smoothAmount, setSmoothAmount,
   captureN, setCaptureN, sampleName, setSampleName, sampleIndex, setSampleIndex,
   capturing, onCapture, status, liveElapsedMs, captureElapsedMs,
 }) {
@@ -545,6 +579,12 @@ function CameraModule({
               ×
             </button>
             <PreviewSettings />
+            <ReadingSmoothing
+              enabled={smoothOn}
+              setEnabled={setSmoothOn}
+              amount={smoothAmount}
+              setAmount={setSmoothAmount}
+            />
           </div>
         </div>
       )}
@@ -746,6 +786,75 @@ function PreviewImage({ label, cam, token, connected }) {
       <figcaption>{label}</figcaption>
     </figure>
   );
+}
+
+function ReadingSmoothing({ enabled, setEnabled, amount, setAmount }) {
+  const onChange = (raw) => setAmount(clampSmoothAmount(raw));
+  return (
+    <div className="settings-section">
+      <div className="settings-title-row">
+        <strong>读数平滑</strong>
+        <label className="smooth-toggle">
+          <input
+            type="checkbox"
+            checked={!!enabled}
+            onChange={(event) => setEnabled(event.target.checked)}
+          />
+          <span>{enabled ? "已启用" : "已关闭"}</span>
+        </label>
+      </div>
+      <div className="preview-settings-row">
+        <div className="preview-settings-label">
+          <span>平滑幅度</span>
+          <span className="preview-settings-hint">数值越大，同组读数越平滑</span>
+        </div>
+        <div className="preview-settings-controls">
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={1}
+            value={amount}
+            disabled={!enabled}
+            onChange={(event) => onChange(event.target.value)}
+          />
+          <input
+            type="number"
+            min={0}
+            max={100}
+            step={1}
+            value={amount}
+            disabled={!enabled}
+            onChange={(event) => onChange(event.target.value)}
+          />
+          <span className="preview-settings-unit">丝</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 从记录解析采样序号：优先 record.index，否则取 id 结尾数字
+function sampleIndexOf(record) {
+  if (record && Number.isFinite(record.index)) return record.index;
+  const match = /(\d+)\s*$/.exec(record?.id || "");
+  return match ? parseInt(match[1], 10) : 0;
+}
+
+// 由字符串稳定映射到 [0,1)，保证同一记录每次渲染得到相同的浮动量
+function hashUnit(str) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i += 1) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return ((h >>> 0) % 100000) / 100000;
+}
+
+function clampSmoothAmount(raw) {
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(100, n));
 }
 
 function parseCaptureN(value) {
