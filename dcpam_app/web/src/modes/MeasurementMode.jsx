@@ -686,7 +686,7 @@ function GearIcon() {
 // 底部巨型结果卡：默认占位 000.00，测得后直接显示本次距离测量值
 function ResultDisplay({ result, capturing }) {
   const has = result && Number.isFinite(result.distanceMean);
-  const value = has ? result.distanceMean.toFixed(2) : "000.00";
+  const value = has ? result.distanceMean.toFixed(3) : "000.000";
   return (
     <div className={`result-panel${has ? " has-result" : ""}${capturing ? " is-capturing" : ""}`}>
       <div className="result-label">测量结果</div>
@@ -696,7 +696,7 @@ function ResultDisplay({ result, capturing }) {
       </div>
       {has && (
         <div className="result-meta">
-          {`± ${Number.isFinite(result.distanceStd) ? result.distanceStd.toFixed(2) : "—"} mm`}
+          {`± ${Number.isFinite(result.distanceStd) ? result.distanceStd.toFixed(3) : "—"} mm`}
           {` · ${result.nUsed}/${result.nTotal} 帧`}
         </div>
       )}
