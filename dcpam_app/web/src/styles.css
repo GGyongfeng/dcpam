@@ -1435,6 +1435,14 @@ tbody tr:hover td {
   display: block;
 }
 
+/* 未连接时预览框内的占位叉号 */
+.preview-disconnected {
+  font-size: clamp(36px, 8vw, 64px);
+  font-weight: 300;
+  line-height: 1;
+  color: #4b5563;
+}
+
 .preview-figure figcaption {
   margin-top: 4px;
   font-size: 11px;

@@ -549,9 +549,9 @@ function CameraModule({
         </div>
       )}
 
-      {/* 已连接 + 预览开 → 画面；否则显示状态文字（未连接则消息内联） */}
-      {isConnected && previewOn ? (
-        <PreviewBlock active />
+      {/* 预览开 → 两个画面框（未连接时框内显示 ✕）；预览关 → 状态文字（未连接则消息内联） */}
+      {previewOn ? (
+        <PreviewBlock connected={isConnected} />
       ) : (
         <div className={`camera-line camera-${isConnected ? "ok" : isDetecting ? "muted" : "error"}`}>
           <span className="dot" />
@@ -704,38 +704,40 @@ function ResultDisplay({ result, capturing }) {
   );
 }
 
-function PreviewBlock({ active }) {
+function PreviewBlock({ connected }) {
   const tokenRef = useRef(0);
   const [token, setToken] = useState(0);
 
+  // 每次由「未连接」转为「已连接」都刷新 token，强制重新拉流
   useEffect(() => {
-    if (!active) return;
+    if (!connected) return;
     tokenRef.current += 1;
     setToken(tokenRef.current);
-  }, [active]);
+  }, [connected]);
 
-  if (!active) {
-    return (
-      <div className="preview-block preview-paused">
-        <span>预览已关闭</span>
-      </div>
-    );
-  }
   return (
     <div className="preview-block">
-      <PreviewImage label="前相机" cam="front" token={token} />
-      <PreviewImage label="后相机" cam="rear" token={token} />
+      <PreviewImage label="前相机" cam="front" token={token} connected={connected} />
+      <PreviewImage label="后相机" cam="rear" token={token} connected={connected} />
     </div>
   );
 }
 
-function PreviewImage({ label, cam, token }) {
+function PreviewImage({ label, cam, token, connected }) {
   const [errored, setErrored] = useState(false);
   const src = `/api/preview.mjpeg?cam=${cam}&t=${token}`;
+
+  // 连接状态 / token 变化时重置错误态，避免恢复连接后仍卡在「预览失败」
+  useEffect(() => {
+    setErrored(false);
+  }, [connected, token]);
+
   return (
     <figure className="preview-figure">
       <div className="image-frame">
-        {errored ? (
+        {!connected ? (
+          <span className="preview-disconnected" aria-label="未连接">✕</span>
+        ) : errored ? (
           <span>预览失败（检查相机连接）</span>
         ) : (
           <img src={src} alt={label} onError={() => setErrored(true)} />
